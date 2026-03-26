@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getTodayMeals, getTodayWorkouts, getWeeklyStats, getTodayWater } from '../api/api';
+import { getMealsByDate, getWorkoutsByDate, getWeeklyStats, getTodayWater } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import AiScanModal from '../components/AiScanModal';
@@ -149,7 +149,7 @@ function WeeklyChart({ data }: { data: WeeklyStat[] }) {
       <Text style={chartStyles.title}>주간 칼로리</Text>
       <View style={chartStyles.bars}>
         {data.map((d, i) => {
-          const date = new Date(d.date);
+          const date = new Date(d.date + 'T12:00:00'); // 정오 기준으로 파싱해 타임존 오차 제거
           const day = days[date.getDay()];
           const barH = Math.max((d.foodKcal / maxVal) * 100, 4);
           const burnH = Math.max((d.burnedKcal / maxVal) * 100, 4);
@@ -208,11 +208,17 @@ export default function HomeScreen({ navigation }: any) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [scanVisible, setScanVisible] = useState(false);
 
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const fetchData = useCallback(async () => {
     try {
+      const today = localToday();
       const [mealRes, workoutRes, weeklyRes, waterRes] = await Promise.all([
-        getTodayMeals(),
-        getTodayWorkouts(),
+        getMealsByDate(today),
+        getWorkoutsByDate(today),
         getWeeklyStats(),
         getTodayWater(),
       ]);

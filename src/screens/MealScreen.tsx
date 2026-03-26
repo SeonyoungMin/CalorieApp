@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getTodayMeals, getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
+import { getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 
@@ -52,11 +52,15 @@ interface Meal {
   foods: Food[];
 }
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const localDateStr = (date = new Date()) => {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const todayStr = () => localDateStr();
 
 const dateLabel = (d: string) => {
   const today = todayStr();
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const yDate = new Date(); yDate.setDate(yDate.getDate() - 1);
+  const yesterday = localDateStr(yDate);
   if (d === today) return '오늘';
   if (d === yesterday) return '어제';
   return d;
@@ -86,7 +90,7 @@ export default function MealScreen() {
   const fetchMeals = useCallback(async (date: string) => {
     try {
       const [res, savedMemo] = await Promise.all([
-        date === todayStr() ? getTodayMeals() : getMealsByDate(date),
+        getMealsByDate(date),
         AsyncStorage.getItem(`meal_memo_${date}`),
       ]);
       setMeals(res.data || []);
@@ -131,9 +135,9 @@ export default function MealScreen() {
   );
 
   const moveDate = (delta: number) => {
-    const d = new Date(viewDate);
+    const d = new Date(viewDate + 'T12:00:00');
     d.setDate(d.getDate() + delta);
-    const next = d.toISOString().split('T')[0];
+    const next = localDateStr(d);
     if (next <= todayStr()) setViewDate(next);
   };
 
@@ -313,11 +317,11 @@ export default function MealScreen() {
             <View
               style={[
                 styles.kcalBarFill,
-                { width: `${Math.min((totalKcal / 2000) * 100, 100)}%` },
+                { width: `${Math.min((totalKcal / goalKcal) * 100, 100)}%` },
               ]}
             />
           </View>
-          <Text style={styles.kcalBarText}>{totalKcal} / 2000 kcal</Text>
+          <Text style={styles.kcalBarText}>{totalKcal} / {goalKcal} kcal</Text>
         </View>
 
         {loading ? (

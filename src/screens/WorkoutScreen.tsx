@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getTodayWorkouts, getWorkoutsByDate, saveWorkout, deleteWorkout } from '../api/api';
+import { getWorkoutsByDate, saveWorkout, deleteWorkout } from '../api/api';
 
 const COLORS = {
   primary: '#FF6B6B', secondary: '#4ECDC4', success: '#51CF66',
@@ -30,11 +30,15 @@ interface Workout {
   kcalBurned: number;
 }
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const localDateStr = (date = new Date()) => {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const todayStr = () => localDateStr();
 
 const dateLabel = (d: string) => {
   const today = todayStr();
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const yDate = new Date(); yDate.setDate(yDate.getDate() - 1);
+  const yesterday = localDateStr(yDate);
   if (d === today) return '오늘';
   if (d === yesterday) return '어제';
   return d;
@@ -60,7 +64,7 @@ export default function WorkoutScreen() {
   const fetchWorkouts = useCallback(async (date: string) => {
     try {
       const [res, savedMemo] = await Promise.all([
-        date === todayStr() ? getTodayWorkouts() : getWorkoutsByDate(date),
+        getWorkoutsByDate(date),
         AsyncStorage.getItem(`workout_memo_${date}`),
       ]);
       setWorkouts(res.data || []);
@@ -81,9 +85,9 @@ export default function WorkoutScreen() {
   };
 
   const moveDate = (delta: number) => {
-    const d = new Date(viewDate);
+    const d = new Date(viewDate + 'T12:00:00');
     d.setDate(d.getDate() + delta);
-    const next = d.toISOString().split('T')[0];
+    const next = localDateStr(d);
     if (next <= todayStr()) setViewDate(next);
   };
 
