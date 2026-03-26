@@ -60,25 +60,27 @@ function computeCycleStatus(info: CycleInfo): {
   daysUntilNext: number;
 } {
   const today = new Date();
-  const last = new Date(info.lastPeriodDate);
+  const last = new Date(info.lastPeriodDate + 'T12:00:00'); // 정오 기준으로 파싱해 타임존 오차 제거
   const diff = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
   const dayOfCycle = (diff % info.cycleLength) + 1;
 
-  // Next period
-  const nextPeriodMs =
-    last.getTime() + Math.ceil(diff / info.cycleLength) * info.cycleLength * 24 * 60 * 60 * 1000;
+  // 다음 생리일: 최소 1사이클 이후 (diff=0인 경우도 올바르게 처리)
+  const cycleNum = Math.max(1, Math.ceil((diff + 1) / info.cycleLength));
+  const nextPeriodMs = last.getTime() + cycleNum * info.cycleLength * 24 * 60 * 60 * 1000;
   const nextPeriod = new Date(nextPeriodMs);
   const daysUntilNext = Math.ceil((nextPeriod.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-  // Ovulation: cycleLength - 14 days from start
+  // 배란일: 다음 생리일 기준 14일 전
   const ovulationDay = info.cycleLength - 14;
-  const ovulationDate = new Date(last.getTime() + (Math.floor(diff / info.cycleLength) * info.cycleLength + ovulationDay) * 24 * 60 * 60 * 1000);
+  const currentCycleStart = last.getTime() + Math.floor(diff / info.cycleLength) * info.cycleLength * 24 * 60 * 60 * 1000;
+  const ovulationDate = new Date(currentCycleStart + ovulationDay * 24 * 60 * 60 * 1000);
 
+  // 단계 판정: '생리 중' 을 '생리 예정' 보다 먼저 체크
   let phase: CyclePhase;
-  if (daysUntilNext <= 3) {
-    phase = '생리 예정';
-  } else if (dayOfCycle <= info.periodLength) {
+  if (dayOfCycle <= info.periodLength) {
     phase = '생리 중';
+  } else if (daysUntilNext <= 3) {
+    phase = '생리 예정';
   } else if (dayOfCycle <= ovulationDay - 3) {
     phase = '가임기';
   } else if (dayOfCycle <= ovulationDay + 2) {
@@ -100,7 +102,7 @@ function CycleCalendar({ info }: { info: CycleInfo }) {
   const { cycleLength, periodLength, lastPeriodDate } = info;
   const ovulationDay = cycleLength - 14;
   const today = new Date();
-  const last = new Date(lastPeriodDate);
+  const last = new Date(lastPeriodDate + 'T12:00:00');
   const diff = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
   const currentDay = (diff % cycleLength) + 1;
 
