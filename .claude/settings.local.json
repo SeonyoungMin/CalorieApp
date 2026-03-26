@@ -19,7 +19,12 @@
       "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
       "Bash(export JAVA_HOME=\"/c/Program Files/Java/jdk-17\" export PATH=\"$JAVA_HOME/bin:$PATH\" cd \"D:/MSY/calorieApp\")",
       "Bash(SESSION=\"BD222ED122B680BF52D64744DD82991C\")",
-      "Bash(__NEW_LINE_aef04aac0f5d44e4__ echo:*)"
+      "Bash(__NEW_LINE_aef04aac0f5d44e4__ echo:*)",
+      "Bash(npm list:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(where java:*)",
+      "Bash(echo:*)",
+      "Bash(JAVA_HOME=\"C:/Program Files/jdk-17.0.12\" ./gradlew clean)"
     ]
   }
 }

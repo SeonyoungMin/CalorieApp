@@ -31,7 +31,7 @@ export default function StatsScreen() {
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
   const [weightList, setWeightList] = useState<any[]>([]);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
-  const [calendarYear] = useState(new Date().getFullYear());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
 
   useFocusEffect(useCallback(() => {
     const load = async () => {
@@ -39,7 +39,10 @@ export default function StatsScreen() {
       try {
         const [wRes, wgRes] = await Promise.all([getWeeklyStats(), getWeightList()]);
         setWeeklyData(wRes.data || []);
-        setWeightList(wgRes.data || []);
+        const sorted = (wgRes.data || []).sort(
+          (a: any, b: any) => new Date(a.logDate).getTime() - new Date(b.logDate).getTime()
+        );
+        setWeightList(sorted);
       } catch (_) {}
       setLoading(false);
     };
@@ -181,11 +184,17 @@ export default function StatsScreen() {
             <View style={styles.card}>
               {/* 월 선택 */}
               <View style={styles.monthNav}>
-                <TouchableOpacity onPress={() => setCalendarMonth(m => Math.max(0, m - 1))}>
+                <TouchableOpacity onPress={() => {
+                  if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); }
+                  else setCalendarMonth(m => m - 1);
+                }}>
                   <Text style={styles.navBtn}>‹</Text>
                 </TouchableOpacity>
                 <Text style={styles.monthLabel}>{calendarYear}년 {calendarMonth + 1}월</Text>
-                <TouchableOpacity onPress={() => setCalendarMonth(m => Math.min(11, m + 1))}>
+                <TouchableOpacity onPress={() => {
+                  if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); }
+                  else setCalendarMonth(m => m + 1);
+                }}>
                   <Text style={styles.navBtn}>›</Text>
                 </TouchableOpacity>
               </View>

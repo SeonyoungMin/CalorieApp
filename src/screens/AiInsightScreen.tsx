@@ -10,6 +10,7 @@ import {
 import { getTodayMeals, getTodayWorkouts, getWeeklyStats } from '../api/api';
 import PremiumModal from '../components/PremiumModal';
 import { useSubscription } from '../hooks/useSubscription';
+import { useAuth } from '../context/AuthContext';
 
 const COLORS = {
   primary: '#FF6B6B', secondary: '#4ECDC4', gold: '#FCC419',
@@ -24,9 +25,8 @@ const TABS = [
   { key: 'weekly', label: '주간 리포트', emoji: '📊' },
 ];
 
-const GOAL_KCAL = 2000;
-
 export default function AiInsightScreen() {
+  const { goalKcal: GOAL_KCAL, userWeightKg, userHeightCm } = useAuth();
   const { isPremium, activatePremium, cancelPremium } = useSubscription();
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('diet');
@@ -48,7 +48,7 @@ export default function AiInsightScreen() {
   };
 
   const runDietAnalysis = () => run(async () => {
-    const [mealsRes, _] = await Promise.all([getTodayMeals(), getTodayWorkouts()]);
+    const mealsRes = await getTodayMeals();
     const meals = mealsRes.data || [];
     const totalKcal = meals.reduce((s: number, m: any) => s + m.totalKcal, 0);
     const result = await analyzeDiet(meals, totalKcal, GOAL_KCAL);
@@ -56,13 +56,13 @@ export default function AiInsightScreen() {
   });
 
   const runMealPlan = () => run(async () => {
-    const result = await getMealRecommendation(GOAL_KCAL, 65, 170);
+    const result = await getMealRecommendation(GOAL_KCAL, userWeightKg || 65, userHeightCm || 170);
     setMealPlan(result);
   });
 
   const runWorkoutPlan = () => run(async () => {
     const workoutsRes = await getTodayWorkouts();
-    const result = await getWorkoutRecommendation(65, GOAL_KCAL, workoutsRes.data || []);
+    const result = await getWorkoutRecommendation(userWeightKg || 65, GOAL_KCAL, workoutsRes.data || []);
     setWorkoutPlan(result);
   });
 

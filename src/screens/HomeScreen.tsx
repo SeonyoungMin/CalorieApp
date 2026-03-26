@@ -48,7 +48,9 @@ interface Workout {
 
 // ─── Circular Progress ───────────────────────────────────────────────────────
 function CircularProgress({ value, max, size = 180 }: { value: number; max: number; size?: number }) {
-  const pct = Math.min(value / max, 1);
+  const validMax = max && max > 0 ? max : 2000;
+  const validValue = value || 0;
+  const pct = Math.max(0, Math.min(validValue / validMax, 1));
   const strokeWidth = 14;
   const r = (size - strokeWidth) / 2;
   const cx = size / 2;
@@ -153,7 +155,8 @@ const chartStyles = StyleSheet.create({
 
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: any) {
-  const { logout, goalKcal: GOAL_KCAL } = useAuth();
+  const { logout, goalKcal } = useAuth();
+  const GOAL_KCAL = goalKcal && goalKcal > 0 ? goalKcal : 2000;
   const { isPremium } = useSubscription();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -227,7 +230,7 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>안녕하세요! 👋</Text>
-          <Text style={styles.date}>{new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })}</Text>
+          <Text style={styles.date}>{`${new Date().getMonth() + 1}월 ${new Date().getDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][new Date().getDay()]}요일`}</Text>
         </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('More', { screen: 'Profile' })}

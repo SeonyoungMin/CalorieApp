@@ -65,7 +65,7 @@ function MainTabs() {
       <Tab.Screen name="Meal" component={MealScreen} options={{ title: '식사' }} />
       <Tab.Screen name="Workout" component={WorkoutScreen} options={{ title: '운동 기록' }} />
       <Tab.Screen name="Weight" component={WeightScreen} options={{ title: '체중기록' }} />
-      <Tab.Screen name="More" component={MoreStack} options={{ title: '더보기' }} />
+      <Tab.Screen name="More" component={MoreStack} options={{ title: '더보기', unmountOnBlur: true }} />
     </Tab.Navigator>
   );
 }

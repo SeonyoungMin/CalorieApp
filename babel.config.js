@@ -19,5 +19,6 @@ module.exports = (api) => {
 
   return {
     presets: ['module:@react-native/babel-preset'],
+    plugins: ['transform-inline-environment-variables'],
   };
 };

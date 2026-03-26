@@ -209,7 +209,7 @@ export default function MealScreen() {
     if (!ok) return;
     try {
       await deleteMeal(mealId);
-      await fetchMeals();
+      await fetchMeals(viewDate);
     } catch {
       Alert.alert('오류', '삭제에 실패했습니다.');
     }
@@ -227,7 +227,7 @@ export default function MealScreen() {
     if (!ok) return;
     try {
       await deleteAllTodayMeals();
-      await fetchMeals();
+      await fetchMeals(viewDate);
     } catch {
       Alert.alert('오류', '삭제에 실패했습니다.');
     }
