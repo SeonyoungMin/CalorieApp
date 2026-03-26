@@ -5,6 +5,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { getWeightList, getWeeklyStats } from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import PremiumModal from '../components/PremiumModal';
+import { useSubscription } from '../hooks/useSubscription';
 
 const COLORS = {
   primary: '#FF6B6B', secondary: '#4ECDC4', gold: '#FCC419',
@@ -22,6 +24,8 @@ const DAYS_KR = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function StatsScreen() {
   const { goalKcal: GOAL_KCAL, userWeightKg } = useAuth();
+  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('nutrients');
   const [loading, setLoading] = useState(true);
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
@@ -44,6 +48,30 @@ export default function StatsScreen() {
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
+  }
+
+  if (!isPremium) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+        <Text style={{ fontSize: 64 }}>📊</Text>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.text, marginTop: 16, marginBottom: 12 }}>프리미엄 전용 기능</Text>
+        <Text style={{ fontSize: 14, color: '#78909C', textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
+          영양소 분석, 캘린더, 체중 그래프는{'\n'}프리미엄 회원만 이용 가능합니다.
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: COLORS.primary, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 32 }}
+          onPress={() => setPremiumVisible(true)}
+        >
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>👑 프리미엄 구독하기</Text>
+        </TouchableOpacity>
+        <PremiumModal
+          visible={premiumVisible}
+          onClose={() => setPremiumVisible(false)}
+          isPremium={false}
+          onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+        />
+      </View>
+    );
   }
 
   // 영양소 추정 (식사 데이터 기반 평균 비율 사용)
@@ -330,7 +358,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   tabBar: { backgroundColor: COLORS.card, maxHeight: 72, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
   tabContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  tab: { alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', minWidth: 90 },
+  tab: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0 },
   tabActive: { backgroundColor: COLORS.primary },
   tabEmoji: { fontSize: 18 },
   tabLabel: { fontSize: 11, fontWeight: '600', color: '#78909C', marginTop: 2 },

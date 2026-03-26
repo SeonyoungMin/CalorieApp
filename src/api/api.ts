@@ -76,11 +76,13 @@ export const logoutApi = () => api.get('/logout');
 
 // ─── Meal ────────────────────────────────────────────────────────────────────
 export const getTodayMeals = () => MOCK_MODE ? mockResponse([]) : api.get('/api/meal/today');
+export const getMealsByDate = (date: string) => MOCK_MODE ? mockResponse([]) : api.get('/api/meal/by-date', { params: { date } });
 export const saveMeal = (data: {
   mealType: string;
   totalKcal: number;
   isText: boolean;
   foods: { foodName: string; kcal: number }[];
+  logDate?: string;
 }) => MOCK_MODE ? mockResponse({}) : api.post('/api/meal/save', data);
 export const updateMeal = (mealId: number, data: object) =>
   MOCK_MODE ? mockResponse({}) : api.put(`/api/meal/${mealId}`, data);
@@ -89,10 +91,12 @@ export const deleteAllTodayMeals = () => MOCK_MODE ? mockResponse({}) : api.dele
 
 // ─── Workout ─────────────────────────────────────────────────────────────────
 export const getTodayWorkouts = () => MOCK_MODE ? mockResponse([]) : api.get('/api/workout/today');
+export const getWorkoutsByDate = (date: string) => MOCK_MODE ? mockResponse([]) : api.get('/api/workout/by-date', { params: { date } });
 export const saveWorkout = (data: {
   exerciseName: string;
   durationMin: number;
   kcalBurned: number;
+  logDate?: string;
 }) => MOCK_MODE ? mockResponse({}) : api.post('/api/workout/save', data);
 export const deleteWorkout = (workoutId: number) =>
   MOCK_MODE ? mockResponse({}) : api.delete(`/api/workout/${workoutId}`);

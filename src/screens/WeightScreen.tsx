@@ -10,6 +10,7 @@ import {
   Alert,
   Modal,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getWeightList, saveWeight, deleteWeight } from '../api/api';
@@ -144,22 +145,22 @@ export default function WeightScreen() {
     }
   };
 
-  const handleDelete = (weightId: number) => {
-    Alert.alert('삭제', '이 기록을 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteWeight(weightId);
-            await fetchData();
-          } catch {
-            Alert.alert('오류', '삭제에 실패했습니다.');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async (weightId: number) => {
+    const ok = Platform.OS === 'web'
+      ? window.confirm('이 기록을 삭제하시겠습니까?')
+      : await new Promise<boolean>((resolve) =>
+          Alert.alert('삭제', '이 기록을 삭제하시겠습니까?', [
+            { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+            { text: '삭제', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!ok) return;
+    try {
+      await deleteWeight(weightId);
+      await fetchData();
+    } catch {
+      Alert.alert('오류', '삭제에 실패했습니다.');
+    }
   };
 
   const latest = records[0];

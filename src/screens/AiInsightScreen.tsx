@@ -8,6 +8,8 @@ import {
   DietFeedback, MealPlan, WorkoutPlan, WeeklyReport,
 } from '../services/claudeService';
 import { getTodayMeals, getTodayWorkouts, getWeeklyStats } from '../api/api';
+import PremiumModal from '../components/PremiumModal';
+import { useSubscription } from '../hooks/useSubscription';
 
 const COLORS = {
   primary: '#FF6B6B', secondary: '#4ECDC4', gold: '#FCC419',
@@ -25,6 +27,8 @@ const TABS = [
 const GOAL_KCAL = 2000;
 
 export default function AiInsightScreen() {
+  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('diet');
   const [loading, setLoading] = useState(false);
   const [dietResult, setDietResult] = useState<DietFeedback | null>(null);
@@ -67,6 +71,27 @@ export default function AiInsightScreen() {
     const result = await getWeeklyReport(res.data || [], GOAL_KCAL);
     setWeeklyReport(result);
   });
+
+  if (!isPremium) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.gateWrap}>
+          <Text style={{ fontSize: 64 }}>👑</Text>
+          <Text style={styles.gateTitle}>프리미엄 전용 기능</Text>
+          <Text style={styles.gateDesc}>AI 식단 분석, 식단 추천, 운동 추천,{'\n'}주간 리포트는 프리미엄 회원만 이용 가능합니다.</Text>
+          <TouchableOpacity style={styles.gateBtn} onPress={() => setPremiumVisible(true)}>
+            <Text style={styles.gateBtnText}>👑 프리미엄 구독하기</Text>
+          </TouchableOpacity>
+        </View>
+        <PremiumModal
+          visible={premiumVisible}
+          onClose={() => setPremiumVisible(false)}
+          isPremium={false}
+          onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -321,9 +346,14 @@ function InfoChip({ label, value, color }: { label: string; value: string; color
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  gateWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  gateTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginTop: 16, marginBottom: 12 },
+  gateDesc: { fontSize: 14, color: '#78909C', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
+  gateBtn: { backgroundColor: COLORS.primary, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 32 },
+  gateBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   tabBar: { backgroundColor: COLORS.card, maxHeight: 72, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
   tabContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  tab: { alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', minWidth: 80 },
+  tab: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0 },
   tabActive: { backgroundColor: COLORS.primary },
   tabEmoji: { fontSize: 18 },
   tabLabel: { fontSize: 11, fontWeight: '600', color: '#78909C', marginTop: 2 },

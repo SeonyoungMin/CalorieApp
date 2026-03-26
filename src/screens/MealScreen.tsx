@@ -10,9 +10,11 @@ import {
   Alert,
   Modal,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getTodayMeals, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getTodayMeals, getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
 
 const COLORS = {
   primary: '#FF6B6B',
@@ -48,38 +50,85 @@ interface Meal {
   foods: Food[];
 }
 
+const todayStr = () => new Date().toISOString().split('T')[0];
+
+const dateLabel = (d: string) => {
+  const today = todayStr();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (d === today) return '오늘';
+  if (d === yesterday) return '어제';
+  return d;
+};
+
 export default function MealScreen() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [viewDate, setViewDate] = useState(todayStr());
+  const [memo, setMemo] = useState('');
+  const [memoEdit, setMemoEdit] = useState(false);
+  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
+  const [datePickerInput, setDatePickerInput] = useState('');
 
   // Form state
   const [mealType, setMealType] = useState('아침');
+  const [logDate, setLogDate] = useState(todayStr());
   const [foods, setFoods] = useState<{ foodName: string; kcal: string }[]>([
     { foodName: '', kcal: '' },
   ]);
 
-  const fetchMeals = useCallback(async () => {
+  const fetchMeals = useCallback(async (date: string) => {
     try {
-      const res = await getTodayMeals();
+      const [res, savedMemo] = await Promise.all([
+        date === todayStr() ? getTodayMeals() : getMealsByDate(date),
+        AsyncStorage.getItem(`meal_memo_${date}`),
+      ]);
       setMeals(res.data || []);
+      setMemo(savedMemo || '');
+      setMemoEdit(false);
     } catch {
       //
     }
   }, []);
 
+  const saveMemo = async () => {
+    await AsyncStorage.setItem(`meal_memo_${viewDate}`, memo);
+    setMemoEdit(false);
+  };
+
+  const openDatePicker = () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.max = todayStr();
+      input.value = viewDate;
+      input.onchange = (e: any) => { if (e.target.value) setViewDate(e.target.value); };
+      input.click();
+    } else {
+      setDatePickerInput(viewDate);
+      setShowDatePickerModal(true);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchMeals().finally(() => setLoading(false));
-    }, [fetchMeals])
+      fetchMeals(viewDate).finally(() => setLoading(false));
+    }, [fetchMeals, viewDate])
   );
+
+  const moveDate = (delta: number) => {
+    const d = new Date(viewDate);
+    d.setDate(d.getDate() + delta);
+    const next = d.toISOString().split('T')[0];
+    if (next <= todayStr()) setViewDate(next);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchMeals();
+    await fetchMeals(viewDate);
     setRefreshing(false);
   };
 
@@ -100,6 +149,7 @@ export default function MealScreen() {
 
   const resetForm = () => {
     setMealType('아침');
+    setLogDate(new Date().toISOString().split('T')[0]);
     setFoods([{ foodName: '', kcal: '' }]);
   };
 
@@ -116,10 +166,15 @@ export default function MealScreen() {
         kcal: parseInt(f.kcal, 10) || 0,
       }));
       const totalKcal = foodData.reduce((s, f) => s + f.kcal, 0);
-      await saveMeal({ mealType, totalKcal, isText: true, foods: foodData });
-      await fetchMeals();
+      await saveMeal({ mealType, totalKcal, isText: true, foods: foodData, logDate });
       setModalVisible(false);
       resetForm();
+      // 현재 보고 있는 날짜와 저장 날짜가 같으면 목록 새로고침
+      if (logDate === viewDate) {
+        await fetchMeals(viewDate);
+      } else {
+        Alert.alert('저장 완료', `${logDate} 날짜로 기록되었습니다.\n해당 날짜로 이동해서 확인하세요.`);
+      }
     } catch (e: any) {
       Alert.alert('저장 실패', e?.response?.data?.message || '다시 시도해주세요.');
     } finally {
@@ -127,40 +182,40 @@ export default function MealScreen() {
     }
   };
 
-  const handleDelete = (mealId: number) => {
-    Alert.alert('삭제', '이 식사 기록을 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMeal(mealId);
-            await fetchMeals();
-          } catch {
-            Alert.alert('오류', '삭제에 실패했습니다.');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async (mealId: number) => {
+    const ok = Platform.OS === 'web'
+      ? window.confirm('이 식사 기록을 삭제하시겠습니까?')
+      : await new Promise<boolean>((resolve) =>
+          Alert.alert('삭제', '이 식사 기록을 삭제하시겠습니까?', [
+            { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+            { text: '삭제', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!ok) return;
+    try {
+      await deleteMeal(mealId);
+      await fetchMeals();
+    } catch {
+      Alert.alert('오류', '삭제에 실패했습니다.');
+    }
   };
 
-  const handleDeleteAll = () => {
-    Alert.alert('전체 삭제', '오늘의 모든 식사 기록을 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '전체 삭제',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteAllTodayMeals();
-            await fetchMeals();
-          } catch {
-            Alert.alert('오류', '삭제에 실패했습니다.');
-          }
-        },
-      },
-    ]);
+  const handleDeleteAll = async () => {
+    const ok = Platform.OS === 'web'
+      ? window.confirm('오늘의 모든 식사 기록을 삭제하시겠습니까?')
+      : await new Promise<boolean>((resolve) =>
+          Alert.alert('전체 삭제', '오늘의 모든 식사 기록을 삭제하시겠습니까?', [
+            { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+            { text: '전체 삭제', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!ok) return;
+    try {
+      await deleteAllTodayMeals();
+      await fetchMeals();
+    } catch {
+      Alert.alert('오류', '삭제에 실패했습니다.');
+    }
   };
 
   const totalKcal = meals.reduce((s, m) => s + m.totalKcal, 0);
@@ -171,22 +226,66 @@ export default function MealScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
+        {/* 날짜 네비게이션 */}
+        <View style={styles.dateNav}>
+          <TouchableOpacity onPress={() => moveDate(-1)} style={styles.dateArrow}>
+            <Text style={styles.dateArrowText}>‹</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openDatePicker} style={styles.dateLabelBtn}>
+            <Text style={styles.dateLabel}>{dateLabel(viewDate)} 📅</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => moveDate(1)}
+            style={[styles.dateArrow, viewDate === todayStr() && styles.dateArrowDisabled]}
+            disabled={viewDate === todayStr()}
+          >
+            <Text style={[styles.dateArrowText, viewDate === todayStr() && { color: '#D0D8E4' }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.headerTitle}>🍽️ 오늘의 식사</Text>
+            <Text style={styles.headerTitle}>🍽️ {dateLabel(viewDate)}의 식사</Text>
             <Text style={styles.headerSub}>총 {totalKcal} kcal 섭취</Text>
           </View>
           <View style={styles.headerBtns}>
-            {meals.length > 0 && (
+            {meals.length > 0 && viewDate === todayStr() && (
               <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAll}>
                 <Text style={styles.deleteAllText}>전체삭제</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => { setLogDate(viewDate); setModalVisible(true); }}>
               <Text style={styles.addBtnText}>+ 추가</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* 한줄 요약 */}
+        <View style={styles.memoCard}>
+          <Text style={styles.memoIcon}>📝</Text>
+          {memoEdit ? (
+            <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                style={styles.memoInput}
+                value={memo}
+                onChangeText={setMemo}
+                placeholder="오늘 식단 한줄 요약..."
+                placeholderTextColor="#B0BEC5"
+                autoFocus
+                maxLength={50}
+              />
+              <TouchableOpacity onPress={saveMemo} style={styles.memoSaveBtn}>
+                <Text style={styles.memoSaveBtnText}>저장</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => setMemoEdit(true)}>
+              <Text style={[styles.memoText, !memo && { color: '#B0BEC5' }]}>
+                {memo || '한줄 요약을 남겨보세요 (탭해서 입력)'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Total Kcal Bar */}
@@ -250,6 +349,32 @@ export default function MealScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Date Selector */}
+            <Text style={styles.label}>날짜</Text>
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={logDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e: any) => setLogDate(e.target.value)}
+                style={{
+                  width: '100%', padding: '10px 14px', fontSize: 15,
+                  border: '1.5px solid #E0E7EF', borderRadius: 12,
+                  marginBottom: 12, color: '#2C3E50', backgroundColor: '#FAFBFD',
+                  boxSizing: 'border-box',
+                } as any}
+              />
+            ) : (
+              <TextInput
+                style={[styles.foodInput, { marginBottom: 12 }]}
+                value={logDate}
+                onChangeText={setLogDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#B0BEC5"
+                maxLength={10}
+              />
+            )}
+
             {/* Meal Type Selector */}
             <Text style={styles.label}>식사 유형</Text>
             <View style={styles.typeRow}>
@@ -311,6 +436,41 @@ export default function MealScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* 날짜 선택 모달 (네이티브) */}
+      <Modal visible={showDatePickerModal} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { paddingBottom: 24 }]}>
+            <Text style={styles.modalTitle}>날짜 선택</Text>
+            <TextInput
+              style={styles.input}
+              value={datePickerInput}
+              onChangeText={setDatePickerInput}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#B0BEC5"
+              keyboardType="numeric"
+              maxLength={10}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: '#E0E7EF' }]} onPress={() => setShowDatePickerModal(false)}>
+                <Text style={[styles.saveBtnText, { color: '#78909C' }]}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { flex: 2 }]}
+                onPress={() => {
+                  if (datePickerInput && datePickerInput <= todayStr()) {
+                    setViewDate(datePickerInput);
+                    setShowDatePickerModal(false);
+                  }
+                }}
+              >
+                <Text style={styles.saveBtnText}>이동</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -318,6 +478,18 @@ export default function MealScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: 20, paddingBottom: 32 },
+  dateNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, gap: 16 },
+  dateArrow: { padding: 8 },
+  dateArrowDisabled: { opacity: 0.3 },
+  dateArrowText: { fontSize: 28, color: COLORS.primary, fontWeight: '300', lineHeight: 32 },
+  dateLabelBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: COLORS.card },
+  dateLabel: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
+  memoCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.card, borderRadius: 14, padding: 14, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: COLORS.secondary },
+  memoIcon: { fontSize: 18 },
+  memoText: { fontSize: 14, color: COLORS.text, fontWeight: '500', flex: 1 },
+  memoInput: { flex: 1, fontSize: 14, color: COLORS.text, borderBottomWidth: 1.5, borderBottomColor: COLORS.secondary, paddingVertical: 2 },
+  memoSaveBtn: { backgroundColor: COLORS.secondary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  memoSaveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   headerTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text },
   headerSub: { fontSize: 13, color: '#78909C', marginTop: 2 },

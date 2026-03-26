@@ -24,11 +24,11 @@ const COLORS = {
 };
 
 const MENU_ITEMS = [
-  { emoji: '🤖', label: 'AI 인사이트', desc: '식단분석 · 식단추천 · 운동추천 · 주간리포트', screen: 'AiInsight', color: COLORS.primary },
-  { emoji: '📊', label: '상세 통계', desc: '영양소 · 캘린더 · 체중 그래프', screen: 'Stats', color: COLORS.secondary },
-  { emoji: '💧', label: '물 섭취', desc: '오늘 마신 물 기록', screen: 'Water', color: COLORS.water },
-  { emoji: '🌸', label: '생리주기', desc: '주기 관리 및 예측', screen: 'Cycle', color: COLORS.pink },
-  { emoji: '👤', label: '내 프로필', desc: '목표 칼로리 · 키 · 체중 설정', screen: 'Profile', color: COLORS.purple },
+  { emoji: '🤖', label: 'AI 인사이트', desc: '식단분석 · 식단추천 · 운동추천 · 주간리포트', screen: 'AiInsight', color: COLORS.primary, premium: true },
+  { emoji: '📊', label: '상세 통계', desc: '영양소 · 캘린더 · 체중 그래프', screen: 'Stats', color: COLORS.secondary, premium: true },
+  { emoji: '💧', label: '물 섭취', desc: '오늘 마신 물 기록', screen: 'Water', color: COLORS.water, premium: false },
+  { emoji: '🌸', label: '생리주기', desc: '주기 관리 및 예측', screen: 'Cycle', color: COLORS.pink, premium: false },
+  { emoji: '👤', label: '내 프로필', desc: '목표 칼로리 · 키 · 체중 설정', screen: 'Profile', color: COLORS.purple, premium: false },
 ];
 
 export default function MoreMenuScreen() {
@@ -71,7 +71,13 @@ export default function MoreMenuScreen() {
         <TouchableOpacity
           key={item.screen}
           style={styles.menuItem}
-          onPress={() => navigation.navigate(item.screen)}
+          onPress={() => {
+            if (item.premium && !isPremium) {
+              setPremiumVisible(true);
+            } else {
+              navigation.navigate(item.screen);
+            }
+          }}
           activeOpacity={0.7}
         >
           <View style={[styles.iconBox, { backgroundColor: item.color + '20' }]}>
@@ -81,7 +87,10 @@ export default function MoreMenuScreen() {
             <Text style={styles.menuLabel}>{item.label}</Text>
             <Text style={styles.menuDesc}>{item.desc}</Text>
           </View>
-          <Text style={styles.arrow}>›</Text>
+          {item.premium && !isPremium
+            ? <Text style={styles.lockBadge}>👑</Text>
+            : <Text style={styles.arrow}>›</Text>
+          }
         </TouchableOpacity>
       ))}
     </ScrollView>
@@ -119,6 +128,7 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   menuDesc: { fontSize: 12, color: '#78909C', marginTop: 2 },
   arrow: { fontSize: 24, color: '#B0BEC5', fontWeight: '300' },
+  lockBadge: { fontSize: 18 },
   premiumBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#FFF8E1', borderRadius: 18, padding: 18, marginBottom: 20,
