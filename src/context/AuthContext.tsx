@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { loginApi, logoutApi, registerApi, getUserProfile } from '../api/api';
 
 const MOCK_MODE = false;
+const isWeb = Platform.OS === 'web';
 
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -41,11 +43,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const checkSession = async () => {
-      const sessionId = await AsyncStorage.getItem('JSESSIONID');
-      if (sessionId) {
-        setIsLoggedIn(true);
-        await fetchProfile();
-      }
+      try {
+        if (isWeb) {
+          // 웹: 브라우저 쿠키로 세션 유효성 확인
+          const res = await getUserProfile();
+          if (res.status === 200 && res.data) {
+            setGoalKcal(res.data.goalKcal || 2000);
+            setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
+            setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
+            setNickname(res.data.nickname || '');
+            setIsLoggedIn(true);
+            setIsLoading(false);
+            return;
+          }
+        } else {
+          // 네이티브: AsyncStorage JSESSIONID 확인
+          const sessionId = await AsyncStorage.getItem('JSESSIONID');
+          if (sessionId) {
+            try {
+              await fetchProfile();
+              setIsLoggedIn(true);
+              setIsLoading(false);
+              return;
+            } catch (_) {
+              // 세션 만료 → 자동로그인 시도
+              await AsyncStorage.removeItem('JSESSIONID');
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 저장된 자격증명으로 자동로그인 시도
+      try {
+        const autoEmail = await AsyncStorage.getItem('AUTO_EMAIL');
+        const autoPwd = await AsyncStorage.getItem('AUTO_PWD');
+        if (autoEmail && autoPwd) {
+          const response = await loginApi(autoEmail, autoPwd);
+          if (response.status === 200) {
+            await fetchProfile();
+            setIsLoggedIn(true);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (_) {}
+
       setIsLoading(false);
     };
     checkSession();
@@ -59,6 +101,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     const response = await loginApi(email, password);
     if (response.status === 200) {
+      // 자동로그인용 자격증명 저장
+      await AsyncStorage.setItem('AUTO_EMAIL', email);
+      await AsyncStorage.setItem('AUTO_PWD', password);
       setIsLoggedIn(true);
       await fetchProfile();
     } else {
@@ -84,6 +129,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await logoutApi();
     } catch (_) {}
     await AsyncStorage.removeItem('JSESSIONID');
+    await AsyncStorage.removeItem('AUTO_EMAIL');
+    await AsyncStorage.removeItem('AUTO_PWD');
     setIsLoggedIn(false);
     setGoalKcal(2000);
     setUserWeightKg(null);
