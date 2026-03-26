@@ -81,8 +81,13 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
       input.type = 'file';
       input.accept = 'image/*';
       if (useCamera) input.capture = 'environment';
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      input.style.pointerEvents = 'none';
+      document.body.appendChild(input);
       input.onchange = async (e: any) => {
         const file = e.target.files[0];
+        document.body.removeChild(input);
         if (!file) return;
         setLoading(true);
         setMode('result');

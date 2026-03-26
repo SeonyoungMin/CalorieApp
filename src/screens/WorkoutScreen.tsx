@@ -93,7 +93,14 @@ export default function WorkoutScreen() {
       input.type = 'date';
       input.max = todayStr();
       input.value = viewDate;
-      input.onchange = (e: any) => { if (e.target.value) setViewDate(e.target.value); };
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      input.style.pointerEvents = 'none';
+      document.body.appendChild(input);
+      input.onchange = (e: any) => {
+        if ((e.target as HTMLInputElement).value) setViewDate((e.target as HTMLInputElement).value);
+        document.body.removeChild(input);
+      };
       input.click();
     } else {
       setDatePickerInput(viewDate);
