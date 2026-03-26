@@ -27,6 +27,7 @@ module.exports = {
     conditionNames: ['require', 'node', 'default'],
     alias: {
       'react-native$': 'react-native-web',
+      'react-native-svg': 'react-native-svg/src/ReactNativeSVG.web',
       'react-native-image-picker': path.resolve(__dirname, 'src/mocks/react-native-image-picker.js'),
     },
   },
@@ -47,6 +48,7 @@ module.exports = {
             'react-native-screens',
             'react-native-safe-area-context',
             'react-native-web',
+            'react-native-svg',
             '@react-native',
             '@anthropic-ai',
           ];

@@ -14,6 +14,7 @@ import { getMealsByDate, getWorkoutsByDate, getWeeklyStats, getTodayWater } from
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import AiScanModal from '../components/AiScanModal';
+import Svg, { Circle } from 'react-native-svg';
 
 const COLORS = {
   primary: '#FF6B6B',
@@ -48,8 +49,12 @@ interface Workout {
 // ─── Circular Progress ───────────────────────────────────────────────────────
 function CircularProgress({ value, max, size = 180 }: { value: number; max: number; size?: number }) {
   const pct = Math.min(value / max, 1);
-  const fillDeg = pct * 360;
   const strokeWidth = 14;
+  const r = (size - strokeWidth) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const dashOffset = circumference * (1 - pct);
 
   // 섭취량에 따라 색상 변화: 초록 → 노랑 → 빨강
   const ringColor = pct >= 1
@@ -60,79 +65,27 @@ function CircularProgress({ value, max, size = 180 }: { value: number; max: numb
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Background ring */}
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: strokeWidth,
-          borderColor: '#E8EDF2',
-          position: 'absolute',
-        }}
-      />
-      {/* Fill simulation: two halves */}
-      {fillDeg > 0 && (
-        <View
-          style={{
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            position: 'absolute',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Right half */}
-          <View
-            style={{
-              position: 'absolute',
-              width: size / 2,
-              height: size,
-              right: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <View
-              style={{
-                width: size,
-                height: size,
-                borderRadius: size / 2,
-                borderWidth: strokeWidth,
-                borderColor: ringColor,
-                position: 'absolute',
-                right: 0,
-                transform: [{ rotate: `${Math.min(fillDeg, 180) - 180}deg` }],
-              }}
-            />
-          </View>
-          {/* Left half (only if > 180deg) */}
-          {fillDeg > 180 && (
-            <View
-              style={{
-                position: 'absolute',
-                width: size / 2,
-                height: size,
-                left: 0,
-                overflow: 'hidden',
-              }}
-            >
-              <View
-                style={{
-                  width: size,
-                  height: size,
-                  borderRadius: size / 2,
-                  borderWidth: strokeWidth,
-                  borderColor: ringColor,
-                  position: 'absolute',
-                  left: 0,
-                  transform: [{ rotate: `${fillDeg - 360}deg` }],
-                }}
-              />
-            </View>
-          )}
-        </View>
-      )}
-      {/* Center text */}
+      <Svg
+        width={size}
+        height={size}
+        style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
+      >
+        {/* 배경 링 */}
+        <Circle cx={cx} cy={cy} r={r} fill="none" stroke="#E8EDF2" strokeWidth={strokeWidth} />
+        {/* 진행 호(arc) */}
+        <Circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+        />
+      </Svg>
+      {/* 가운데 텍스트 */}
       <View style={{ alignItems: 'center' }}>
         <Text style={{ fontSize: 32, fontWeight: '800', color: ringColor }}>{value}</Text>
         <Text style={{ fontSize: 12, color: '#78909C', fontWeight: '500' }}>kcal</Text>
