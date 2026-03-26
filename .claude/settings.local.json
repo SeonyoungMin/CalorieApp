@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx jest:*)",
+      "Bash(node_modules/.bin/jest --testPathPatterns=\"LoginScreen|RegisterScreen|HomeScreen\" --no-coverage)",
+      "Bash(npm install:*)",
+      "Bash(node_modules/.bin/jest --no-coverage)",
+      "Bash(mvn clean:*)",
+      "Bash(cmd.exe /c \"dir D:\\\\MSY\\\\\" 2>&1)",
+      "Bash(ls:*)",
+      "Bash(curl -s -X POST http://localhost:8082/login -d \"email=a@a.com&password=a\" -H \"Content-Type: application/x-www-form-urlencoded\" -c /tmp/cookie.txt -i)",
+      "Bash(curl:*)",
+      "Bash(ssh:*)",
+      "Bash(./mvnw clean:*)",
+      "Bash(cmd /c \"cd D:\\\\MSY\\\\calorieApp && mvnw.cmd clean package -DskipTests\")",
+      "Bash(java -version)",
+      "Read(//c//**)",
+      "Bash(export JAVA_HOME=\"/c/Program Files/Java/jdk-17\")",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "Bash(export JAVA_HOME=\"/c/Program Files/Java/jdk-17\" export PATH=\"$JAVA_HOME/bin:$PATH\" cd \"D:/MSY/calorieApp\")",
+      "Bash(SESSION=\"BD222ED122B680BF52D64744DD82991C\")",
+      "Bash(__NEW_LINE_aef04aac0f5d44e4__ echo:*)"
+    ]
+  }
+}
