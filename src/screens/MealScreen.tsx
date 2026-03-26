@@ -15,6 +15,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getTodayMeals, getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
+import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../hooks/useSubscription';
 
 const COLORS = {
   primary: '#FF6B6B',
@@ -61,6 +63,8 @@ const dateLabel = (d: string) => {
 };
 
 export default function MealScreen() {
+  const { goalKcal } = useAuth();
+  const { isPremium } = useSubscription();
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -249,6 +253,14 @@ export default function MealScreen() {
             <Text style={[styles.dateArrowText, viewDate === todayStr() && { color: '#D0D8E4' }]}>›</Text>
           </TouchableOpacity>
         </View>
+
+        {/* 과식 경고 - 프리미엄 전용 */}
+        {isPremium && totalKcal > goalKcal * 1.1 && (
+          <View style={styles.warningBanner}>
+            <Text style={styles.warningText}>⚠️ 목표보다 {totalKcal - goalKcal}kcal 초과했어요!</Text>
+            <Text style={styles.warningDesc}>가벼운 운동으로 소모해보는 건 어떨까요?</Text>
+          </View>
+        )}
 
         {/* Header */}
         <View style={styles.header}>
@@ -485,6 +497,9 @@ export default function MealScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: 20, paddingBottom: 32 },
+  warningBanner: { backgroundColor: '#FFF3E0', borderRadius: 16, padding: 14, marginBottom: 12, borderLeftWidth: 4, borderLeftColor: '#FF9800' },
+  warningText: { fontSize: 14, fontWeight: '700', color: '#E65100' },
+  warningDesc: { fontSize: 12, color: '#78909C', marginTop: 3 },
   dateNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, gap: 16 },
   dateArrow: { padding: 8 },
   dateArrowDisabled: { opacity: 0.3 },

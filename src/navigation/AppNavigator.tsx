@@ -17,6 +17,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import MoreMenuScreen from '../screens/MoreMenuScreen';
 import AiInsightScreen from '../screens/AiInsightScreen';
 import StatsScreen from '../screens/StatsScreen';
+import BackupScreen from '../screens/BackupScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -79,6 +80,7 @@ function MoreStack() {
       <MoreStackNav.Screen name="Profile" component={ProfileScreen} />
       <MoreStackNav.Screen name="AiInsight" component={AiInsightScreen} />
       <MoreStackNav.Screen name="Stats" component={StatsScreen} />
+      <MoreStackNav.Screen name="Backup" component={BackupScreen} />
     </MoreStackNav.Navigator>
   );
 }

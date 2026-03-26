@@ -12,6 +12,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { getTodayMeals, getTodayWorkouts, getWeeklyStats, getTodayWater } from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../hooks/useSubscription';
 import AiScanModal from '../components/AiScanModal';
 
 const COLORS = {
@@ -196,6 +197,7 @@ const chartStyles = StyleSheet.create({
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: any) {
   const { logout, goalKcal: GOAL_KCAL } = useAuth();
+  const { isPremium } = useSubscription();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [totalKcal, setTotalKcal] = useState(0);
@@ -271,8 +273,8 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* 과식 경고 */}
-      {totalKcal > GOAL_KCAL * 1.1 && (
+      {/* 과식 경고 - 프리미엄 전용 */}
+      {isPremium && totalKcal > GOAL_KCAL * 1.1 && (
         <View style={styles.warningBanner}>
           <Text style={styles.warningText}>⚠️ 오늘 목표보다 {totalKcal - GOAL_KCAL}kcal 초과했어요!</Text>
           <Text style={styles.warningDesc}>가벼운 운동으로 소모해보는 건 어떨까요?</Text>

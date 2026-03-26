@@ -29,6 +29,7 @@ const MENU_ITEMS = [
   { emoji: '💧', label: '물 섭취', desc: '오늘 마신 물 기록', screen: 'Water', color: COLORS.water, premium: false },
   { emoji: '🌸', label: '생리주기', desc: '주기 관리 및 예측', screen: 'Cycle', color: COLORS.pink, premium: false },
   { emoji: '👤', label: '내 프로필', desc: '목표 칼로리 · 키 · 체중 설정', screen: 'Profile', color: COLORS.purple, premium: false },
+  { emoji: '☁️', label: '클라우드 백업', desc: '내 데이터 내보내기 · 자동 동기화', screen: 'Backup', color: COLORS.success, premium: true },
 ];
 
 export default function MoreMenuScreen() {

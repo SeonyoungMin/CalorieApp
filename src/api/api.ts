@@ -129,5 +129,6 @@ export const setGoalKcal = (goalKcal: number) =>
 export const setUserProfile = (weightKg: number, heightCm: number) =>
   MOCK_MODE ? mockResponse({}) : api.post('/api/user/profile', { weightKg, heightCm });
 export const getWeeklyStats = () => MOCK_MODE ? mockResponse([]) : api.get('/api/user/stats/weekly');
+export const exportUserData = () => MOCK_MODE ? mockResponse({}) : api.get('/api/user/export');
 
 export default api;
