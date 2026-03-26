@@ -48,11 +48,15 @@ interface Workout {
 // ─── Circular Progress ───────────────────────────────────────────────────────
 function CircularProgress({ value, max, size = 180 }: { value: number; max: number; size?: number }) {
   const pct = Math.min(value / max, 1);
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  // We simulate arc using rotation of a View overlay
   const fillDeg = pct * 360;
+  const strokeWidth = 14;
+
+  // 섭취량에 따라 색상 변화: 초록 → 노랑 → 빨강
+  const ringColor = pct >= 1
+    ? COLORS.primary          // 목표 초과: 빨강
+    : pct >= 0.8
+    ? COLORS.warning          // 80% 이상: 노랑
+    : COLORS.success;         // 80% 미만: 초록
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -94,7 +98,7 @@ function CircularProgress({ value, max, size = 180 }: { value: number; max: numb
                 height: size,
                 borderRadius: size / 2,
                 borderWidth: strokeWidth,
-                borderColor: fillDeg > 0 ? COLORS.primary : 'transparent',
+                borderColor: ringColor,
                 position: 'absolute',
                 right: 0,
                 transform: [{ rotate: `${Math.min(fillDeg, 180) - 180}deg` }],
@@ -118,7 +122,7 @@ function CircularProgress({ value, max, size = 180 }: { value: number; max: numb
                   height: size,
                   borderRadius: size / 2,
                   borderWidth: strokeWidth,
-                  borderColor: COLORS.primary,
+                  borderColor: ringColor,
                   position: 'absolute',
                   left: 0,
                   transform: [{ rotate: `${fillDeg - 360}deg` }],
@@ -130,7 +134,7 @@ function CircularProgress({ value, max, size = 180 }: { value: number; max: numb
       )}
       {/* Center text */}
       <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontSize: 32, fontWeight: '800', color: COLORS.text }}>{value}</Text>
+        <Text style={{ fontSize: 32, fontWeight: '800', color: ringColor }}>{value}</Text>
         <Text style={{ fontSize: 12, color: '#78909C', fontWeight: '500' }}>kcal</Text>
         <Text style={{ fontSize: 11, color: '#B0BEC5', marginTop: 2 }}>목표 {max}</Text>
       </View>
