@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   TextInput, ActivityIndicator, ScrollView, Alert, Platform,
@@ -8,14 +8,9 @@ import { scanFoodImage, calculateCaloriesFromText, FoodCalorieResult } from '../
 import { saveMeal } from '../api/api';
 import { useSubscription } from '../hooks/useSubscription';
 import PremiumModal from './PremiumModal';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import CalendarPicker from './CalendarPicker';
+import { COLORS } from '../theme';
+import { localDateStr } from '../utils/dateUtils';
 
 interface EditableFood {
   name: string;
@@ -29,7 +24,7 @@ interface Props {
   onSaved: () => void;
 }
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => localDateStr();
 
 export default function AiScanModal({ visible, onClose, onSaved }: Props) {
   const [mode, setMode] = useState<'select' | 'text' | 'result'>('select');
@@ -37,9 +32,15 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [mealType, setMealType] = useState('아침');
   const [logDate, setLogDate] = useState(todayStr());
+  const [showCalendar, setShowCalendar] = useState(false);
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [editableFoods, setEditableFoods] = useState<EditableFood[]>([]);
   const { canScan, remainingFreeScans, isPremium, incrementScanCount, activatePremium, cancelPremium } = useSubscription();
+
+  // 모달이 열릴 때마다 오늘 날짜로 리셋 (앱이 오래 떠있어도 날짜 오류 방지)
+  useEffect(() => {
+    if (visible) setLogDate(todayStr());
+  }, [visible]);
 
   const totalKcal = editableFoods.reduce((s, f) => s + (parseInt(f.kcal) || 0), 0);
 
@@ -107,13 +108,13 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
       return;
     }
     const picker = useCamera ? launchCamera : launchImageLibrary;
-    picker({ mediaType: 'photo', includeBase64: true, quality: 0.7 }, async (res) => {
+    picker({ mediaType: 'photo', includeBase64: true, quality: 0.4, maxWidth: 1280, maxHeight: 1280 }, async (res) => {
       if (res.didCancel || !res.assets?.[0]?.base64) return;
       setLoading(true);
       setMode('result');
       try {
         const asset = res.assets[0];
-        const scanResult = await scanFoodImage(asset.base64!, asset.type || 'image/jpeg');
+        const scanResult = await scanFoodImage(asset.base64!, 'image/jpeg');
         applyResult(scanResult);
         await incrementScanCount();
       } catch (err: any) {
@@ -208,15 +209,15 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
               <Text style={styles.desc}>음식 사진을 찍거나 텍스트로 입력하면{'\n'}AI가 자동으로 칼로리를 계산해요</Text>
               <TouchableOpacity style={[styles.optionBtn, { borderColor: COLORS.primary }]} onPress={() => handleImagePick(true)}>
                 <Text style={styles.optionEmoji}>📷</Text>
-                <View><Text style={styles.optionLabel}>카메라로 촬영</Text><Text style={styles.optionDesc}>지금 음식을 촬영해서 분석</Text></View>
+                <View style={{ flex: 1, flexShrink: 1 }}><Text style={styles.optionLabel} numberOfLines={1}>카메라로 촬영</Text><Text style={styles.optionDesc} numberOfLines={1}>지금 음식을 촬영해서 분석</Text></View>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.optionBtn, { borderColor: COLORS.secondary }]} onPress={() => handleImagePick(false)}>
                 <Text style={styles.optionEmoji}>🖼️</Text>
-                <View><Text style={styles.optionLabel}>갤러리에서 선택</Text><Text style={styles.optionDesc}>저장된 음식 사진으로 분석</Text></View>
+                <View style={{ flex: 1, flexShrink: 1 }}><Text style={styles.optionLabel} numberOfLines={1}>갤러리에서 선택</Text><Text style={styles.optionDesc} numberOfLines={1}>저장된 음식 사진으로 분석</Text></View>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.optionBtn, { borderColor: '#9C88FF' }]} onPress={() => setMode('text')}>
                 <Text style={styles.optionEmoji}>✏️</Text>
-                <View><Text style={styles.optionLabel}>텍스트로 입력</Text><Text style={styles.optionDesc}>음식명을 직접 입력해서 계산</Text></View>
+                <View style={{ flex: 1, flexShrink: 1 }}><Text style={styles.optionLabel} numberOfLines={1}>텍스트로 입력</Text><Text style={styles.optionDesc} numberOfLines={1}>음식명을 직접 입력해서 계산</Text></View>
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -324,14 +325,21 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
                       } as any}
                     />
                   ) : (
-                    <TextInput
-                      style={[styles.editInput, { marginBottom: 16 }]}
-                      value={logDate}
-                      onChangeText={setLogDate}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#B0BEC5"
-                      maxLength={10}
-                    />
+                    <>
+                      <TouchableOpacity
+                        style={styles.datePickerBtn}
+                        onPress={() => setShowCalendar(true)}
+                      >
+                        <Text style={styles.datePickerBtnText}>📅 {logDate}</Text>
+                      </TouchableOpacity>
+                      <CalendarPicker
+                        visible={showCalendar}
+                        value={logDate}
+                        maxDate={todayStr()}
+                        onSelect={d => { setLogDate(d); setShowCalendar(false); }}
+                        onClose={() => setShowCalendar(false)}
+                      />
+                    </>
                   )}
 
                   <View style={styles.row}>
@@ -370,8 +378,8 @@ const styles = StyleSheet.create({
   desc: { fontSize: 14, color: '#78909C', lineHeight: 20, marginBottom: 20 },
   optionBtn: { flexDirection: 'row', alignItems: 'center', gap: 16, borderWidth: 1.5, borderRadius: 16, padding: 18, marginBottom: 12, backgroundColor: '#FAFBFD' },
   optionEmoji: { fontSize: 32 },
-  optionLabel: { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  optionDesc: { fontSize: 12, color: '#78909C', marginTop: 2 },
+  optionLabel: { fontSize: 16, fontWeight: '700', color: COLORS.text, flexShrink: 1 },
+  optionDesc: { fontSize: 12, color: '#78909C', marginTop: 2, flexShrink: 1 },
   textInput: { borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 14, padding: 16, fontSize: 15, color: COLORS.text, backgroundColor: '#FAFBFD', minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
   row: { flexDirection: 'row', gap: 12 },
   cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
@@ -396,6 +404,8 @@ const styles = StyleSheet.create({
   mealTypeBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   mealTypeText: { fontSize: 13, fontWeight: '600', color: '#78909C' },
   mealTypeTextActive: { color: '#fff' },
+  datePickerBtn: { borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16, backgroundColor: '#FAFBFD' },
+  datePickerBtnText: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
   scanCountBadge: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#FFB74D' },
   scanCountText: { fontSize: 13, fontWeight: '600', color: '#E65100' },
   scanCountUpgrade: { fontSize: 12, fontWeight: '700', color: '#FF6B6B' },

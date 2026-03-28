@@ -2,15 +2,7 @@ import React from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Alert,
 } from 'react-native';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  gold: '#FCC419',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -37,7 +29,7 @@ export default function PremiumModal({ visible, onClose, onSubscribe, isPremium,
     // TODO: 실제 결제 연동 (아임포트, Stripe 등)
     Alert.alert(
       '프리미엄 구독',
-      '월 3,900원으로 모든 기능을 무제한 이용하시겠습니까?',
+      '월 3,900원으로 모든 기능을 무제한 이용하시겠습니까?\n\n※ 구독 후 서비스를 이용하신 경우 환불이 제한될 수 있습니다.',
       [
         { text: '취소', style: 'cancel' },
         {
@@ -138,7 +130,10 @@ export default function PremiumModal({ visible, onClose, onSubscribe, isPremium,
             )}
 
             <Text style={styles.notice}>
-              구독은 매월 자동 갱신됩니다. 다음 결제일 24시간 전 취소 가능합니다.
+              구독은 매월 자동 갱신됩니다. 다음 결제일 24시간 전 해지 가능합니다.
+            </Text>
+            <Text style={styles.refundNotice}>
+              구독 후 서비스 이용 시 환불이 어려울 수 있습니다.
             </Text>
           </ScrollView>
         </View>
@@ -210,5 +205,6 @@ const styles = StyleSheet.create({
   activeBadgeText: { color: COLORS.secondary, fontSize: 15, fontWeight: '700' },
   cancelSubBtn: { alignItems: 'center', paddingVertical: 10, marginBottom: 12 },
   cancelSubText: { color: '#B0BEC5', fontSize: 13, textDecorationLine: 'underline' },
-  notice: { fontSize: 11, color: '#B0BEC5', textAlign: 'center', lineHeight: 16, marginBottom: 8 },
+  notice: { fontSize: 11, color: '#B0BEC5', textAlign: 'center', lineHeight: 16, marginBottom: 4 },
+  refundNotice: { fontSize: 9, color: '#D0D8E0', textAlign: 'center', lineHeight: 14, marginBottom: 8 },
 });

@@ -11,12 +11,7 @@ import { getTodayMeals, getTodayWorkouts, getWeeklyStats } from '../api/api';
 import PremiumModal from '../components/PremiumModal';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
-
-const COLORS = {
-  primary: '#FF6B6B', secondary: '#4ECDC4', gold: '#FCC419',
-  purple: '#9C88FF', green: '#51CF66', bg: '#F0F4F8',
-  card: '#FFFFFF', text: '#2C3E50',
-};
+import { COLORS } from '../theme';
 
 const TABS = [
   { key: 'diet', label: '식단 분석', emoji: '🍽️' },
@@ -351,12 +346,12 @@ const styles = StyleSheet.create({
   gateDesc: { fontSize: 14, color: '#78909C', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
   gateBtn: { backgroundColor: COLORS.primary, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 32 },
   gateBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  tabBar: { backgroundColor: COLORS.card, maxHeight: 72, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
-  tabContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  tab: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0 },
+  tabBar: { backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
+  tabContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
+  tab: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0, gap: 4 },
   tabActive: { backgroundColor: COLORS.primary },
-  tabEmoji: { fontSize: 18 },
-  tabLabel: { fontSize: 11, fontWeight: '600', color: '#78909C', marginTop: 2 },
+  tabEmoji: { fontSize: 15 },
+  tabLabel: { fontSize: 12, fontWeight: '600', color: '#78909C' },
   tabLabelActive: { color: '#fff' },
   body: { flex: 1 },
   pageTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 4 },

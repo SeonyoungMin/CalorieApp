@@ -14,18 +14,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getCycleInfo, saveCycle } from '../api/api';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  purple: '#9C88FF',
-  pink: '#FF8FAB',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import CalendarPicker from '../components/CalendarPicker';
 
 interface CycleInfo {
   lastPeriodDate: string;
@@ -59,25 +49,37 @@ function computeCycleStatus(info: CycleInfo): {
   ovulationDate: string;
   daysUntilNext: number;
 } {
+  const cycleLen = Number(info.cycleLength) || 28;
+  const periodLen = Number(info.periodLength) || 5;
+
   const today = new Date();
-  const last = new Date(info.lastPeriodDate + 'T12:00:00'); // 정오 기준으로 파싱해 타임존 오차 제거
+  const last = new Date((info.lastPeriodDate || '') + 'T12:00:00');
+  if (isNaN(last.getTime())) {
+    return {
+      phase: '황체기',
+      dayOfCycle: 1,
+      nextPeriodDate: '-',
+      ovulationDate: '-',
+      daysUntilNext: cycleLen,
+    };
+  }
   const diff = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
-  const dayOfCycle = (diff % info.cycleLength) + 1;
+  const dayOfCycle = (diff % cycleLen) + 1;
 
   // 다음 생리일: 최소 1사이클 이후 (diff=0인 경우도 올바르게 처리)
-  const cycleNum = Math.max(1, Math.ceil((diff + 1) / info.cycleLength));
-  const nextPeriodMs = last.getTime() + cycleNum * info.cycleLength * 24 * 60 * 60 * 1000;
+  const cycleNum = Math.max(1, Math.ceil((diff + 1) / cycleLen));
+  const nextPeriodMs = last.getTime() + cycleNum * cycleLen * 24 * 60 * 60 * 1000;
   const nextPeriod = new Date(nextPeriodMs);
   const daysUntilNext = Math.ceil((nextPeriod.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   // 배란일: 다음 생리일 기준 14일 전
-  const ovulationDay = info.cycleLength - 14;
-  const currentCycleStart = last.getTime() + Math.floor(diff / info.cycleLength) * info.cycleLength * 24 * 60 * 60 * 1000;
+  const ovulationDay = cycleLen - 14;
+  const currentCycleStart = last.getTime() + Math.floor(diff / cycleLen) * cycleLen * 24 * 60 * 60 * 1000;
   const ovulationDate = new Date(currentCycleStart + ovulationDay * 24 * 60 * 60 * 1000);
 
   // 단계 판정: '생리 중' 을 '생리 예정' 보다 먼저 체크
   let phase: CyclePhase;
-  if (dayOfCycle <= info.periodLength) {
+  if (dayOfCycle <= periodLen) {
     phase = '생리 중';
   } else if (daysUntilNext <= 3) {
     phase = '생리 예정';
@@ -99,11 +101,14 @@ function computeCycleStatus(info: CycleInfo): {
 }
 
 function CycleCalendar({ info }: { info: CycleInfo }) {
-  const { cycleLength, periodLength, lastPeriodDate } = info;
+  const { lastPeriodDate } = info;
+  const cycleLength = Number(info.cycleLength) || 28;
+  const periodLength = Number(info.periodLength) || 5;
   const ovulationDay = cycleLength - 14;
   const today = new Date();
-  const last = new Date(lastPeriodDate + 'T12:00:00');
-  const diff = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+  const last = new Date((lastPeriodDate || '') + 'T12:00:00');
+  const lastTime = last.getTime();
+  const diff = isNaN(lastTime) ? 0 : Math.floor((today.getTime() - lastTime) / (1000 * 60 * 60 * 24));
   const currentDay = (diff % cycleLength) + 1;
 
   const days = Array.from({ length: cycleLength }, (_, i) => i + 1);
@@ -179,6 +184,7 @@ export default function CycleScreen({ navigation }: any) {
   const [lastPeriodDate, setLastPeriodDate] = useState('');
   const [cycleLength, setCycleLength] = useState('28');
   const [periodLength, setPeriodLength] = useState('5');
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -186,11 +192,11 @@ export default function CycleScreen({ navigation }: any) {
       if (res.data) {
         setCycleInfo(res.data);
         setLastPeriodDate(res.data.lastPeriodDate);
-        setCycleLength(String(res.data.cycleLength));
-        setPeriodLength(String(res.data.periodLength));
+        setCycleLength(String(res.data.cycleLength || 28));
+        setPeriodLength(String(res.data.periodLength || 5));
       }
     } catch {
-      //
+      Alert.alert('오류', '생리주기 정보를 불러오지 못했습니다.');
     }
   }, []);
 
@@ -352,36 +358,22 @@ export default function CycleScreen({ navigation }: any) {
                 value={lastPeriodDate}
                 onChange={(e: any) => setLastPeriodDate(e.target.value)}
                 style={{
-                  borderWidth: 1.5,
-                  border: '1.5px solid #E0E7EF',
-                  borderRadius: 12,
-                  padding: '12px 14px',
-                  fontSize: 15,
-                  color: '#2C3E50',
-                  backgroundColor: '#FAFBFD',
-                  marginBottom: 14,
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  outline: 'none',
+                  border: '1.5px solid #E0E7EF', borderRadius: 12,
+                  padding: '12px 14px', fontSize: 15, color: '#2C3E50',
+                  backgroundColor: '#FAFBFD', marginBottom: 14,
+                  width: '100%', boxSizing: 'border-box', outline: 'none',
                 } as any}
               />
             ) : (
-              <TextInput
-                style={styles.input}
-                placeholder="예) 2024-03-01"
-                placeholderTextColor="#B0BEC5"
-                value={lastPeriodDate}
-                onChangeText={(v) => {
-                  // 숫자만 추출 후 YYYY-MM-DD 자동 포맷
-                  const digits = v.replace(/[^0-9]/g, '').slice(0, 8);
-                  let formatted = digits;
-                  if (digits.length > 4) formatted = digits.slice(0, 4) + '-' + digits.slice(4);
-                  if (digits.length > 6) formatted = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6);
-                  setLastPeriodDate(formatted);
-                }}
-                keyboardType="numeric"
-                maxLength={10}
-              />
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setShowCalendar(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.datePickerBtnText}>
+                  📅 {lastPeriodDate || '날짜를 선택하세요'}
+                </Text>
+              </TouchableOpacity>
             )}
 
             <View style={styles.inputRow}>
@@ -420,6 +412,14 @@ export default function CycleScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      <CalendarPicker
+        visible={showCalendar}
+        value={lastPeriodDate || new Date().toISOString().slice(0, 10)}
+        maxDate={new Date().toISOString().slice(0, 10)}
+        onSelect={setLastPeriodDate}
+        onClose={() => setShowCalendar(false)}
+      />
     </View>
   );
 }
@@ -453,9 +453,9 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   phaseEmoji: { fontSize: 42 },
-  phaseInfo: { flex: 1 },
-  phaseText: { fontSize: 20, fontWeight: '800' },
-  phaseSub: { fontSize: 13, color: '#78909C', marginTop: 2 },
+  phaseInfo: { flex: 1, flexShrink: 1 },
+  phaseText: { fontSize: 20, fontWeight: '800', flexShrink: 1 },
+  phaseSub: { fontSize: 13, color: '#78909C', marginTop: 2, flexShrink: 1 },
   phaseBadge: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
   phaseBadgeText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   infoRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   },
   infoEmoji: { fontSize: 28 },
   infoLabel: { fontSize: 11, color: '#78909C', marginTop: 6, textAlign: 'center' },
-  infoValue: { fontSize: 14, fontWeight: '800', color: COLORS.text, marginTop: 4, textAlign: 'center' },
+  infoValue: { fontSize: 14, fontWeight: '800', color: COLORS.text, marginTop: 4, textAlign: 'center', flexShrink: 1 },
   infoSub: { fontSize: 11, color: COLORS.pink, marginTop: 2 },
   settingsCard: {
     backgroundColor: COLORS.card,
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
   settingsRow: { flexDirection: 'row', justifyContent: 'space-around' },
   settingItem: { alignItems: 'center' },
   settingLabel: { fontSize: 11, color: '#78909C' },
-  settingValue: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginTop: 4 },
+  settingValue: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginTop: 4, flexShrink: 1 },
   settingDivider: { width: 1, backgroundColor: '#E8EDF2' },
   calendarCard: {
     backgroundColor: COLORS.card,
@@ -513,6 +513,12 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   modalClose: { fontSize: 20, color: '#B0BEC5' },
   label: { fontSize: 13, fontWeight: '600', color: '#78909C', marginBottom: 6 },
+  datePickerBtn: {
+    borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 14,
+    backgroundColor: '#FAFBFD',
+  },
+  datePickerBtnText: { fontSize: 15, color: '#2C3E50', fontWeight: '600' },
   input: {
     borderWidth: 1.5,
     borderColor: '#E0E7EF',

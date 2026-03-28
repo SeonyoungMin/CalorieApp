@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { COLORS } from '../theme';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -18,17 +19,12 @@ import MoreMenuScreen from '../screens/MoreMenuScreen';
 import AiInsightScreen from '../screens/AiInsightScreen';
 import StatsScreen from '../screens/StatsScreen';
 import BackupScreen from '../screens/BackupScreen';
+import ScanScreen from '../screens/ScanScreen';
+import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  bg: '#F0F4F8',
-  text: '#2C3E50',
-  inactive: '#B0BEC5',
-};
 
 function MainTabs() {
   return (
@@ -49,23 +45,48 @@ function MainTabs() {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.inactive,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
-        tabBarIcon: ({ color }) => {
+        tabBarIcon: ({ color, focused }) => {
           const icons: Record<string, string> = {
             Home: '🏠',
             Meal: '🍽️',
+            Scan: '📷',
             Workout: '💪',
-            Weight: '⚖️',
             More: '☰',
           };
+          if (route.name === 'Scan') {
+            return (
+              <View style={{
+                width: 52, height: 52, borderRadius: 26,
+                backgroundColor: focused ? COLORS.primary : COLORS.primary + 'CC',
+                alignItems: 'center', justifyContent: 'center',
+                marginBottom: 2,
+                shadowColor: COLORS.primary,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4, shadowRadius: 6, elevation: 6,
+              }}>
+                <Text style={{ fontSize: 18 }}>📷</Text>
+                <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700', marginTop: 1 }}>스캔</Text>
+              </View>
+            );
+          }
           return <Text style={{ fontSize: 20, color }}>{icons[route.name] ?? '●'}</Text>;
         },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: '홈' }} />
       <Tab.Screen name="Meal" component={MealScreen} options={{ title: '식사' }} />
-      <Tab.Screen name="Workout" component={WorkoutScreen} options={{ title: '운동 기록' }} />
-      <Tab.Screen name="Weight" component={WeightScreen} options={{ title: '체중기록' }} />
-      <Tab.Screen name="More" component={MoreStack} options={{ title: '더보기', unmountOnBlur: true }} />
+      <Tab.Screen name="Scan" component={ScanScreen} options={{ title: '스캔', tabBarLabel: () => null }} />
+      <Tab.Screen name="Workout" component={WorkoutScreen} options={{ title: '운동' }} />
+      <Tab.Screen
+        name="More"
+        component={MoreStack}
+        options={{ title: '더보기', unmountOnBlur: true }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('More', { screen: 'MoreMenu' });
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 }
@@ -81,6 +102,8 @@ function MoreStack() {
       <MoreStackNav.Screen name="AiInsight" component={AiInsightScreen} />
       <MoreStackNav.Screen name="Stats" component={StatsScreen} />
       <MoreStackNav.Screen name="Backup" component={BackupScreen} />
+      <MoreStackNav.Screen name="Weight" component={WeightScreen} />
+      <MoreStackNav.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
     </MoreStackNav.Navigator>
   );
 }

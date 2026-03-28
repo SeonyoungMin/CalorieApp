@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, Modal, RefreshControl, Platform,
@@ -6,11 +6,9 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getWorkoutsByDate, saveWorkout, deleteWorkout } from '../api/api';
-
-const COLORS = {
-  primary: '#FF6B6B', secondary: '#4ECDC4', success: '#51CF66',
-  warning: '#FCC419', purple: '#9C88FF', bg: '#F0F4F8', card: '#FFFFFF', text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import { localDateStr, todayStr, dateLabel } from '../utils/dateUtils';
+import CalendarPicker from '../components/CalendarPicker';
 
 const PRESET_WORKOUTS = [
   { name: '걷기', emoji: '🚶', kcalPerMin: 4 },
@@ -30,19 +28,6 @@ interface Workout {
   kcalBurned: number;
 }
 
-const localDateStr = (date = new Date()) => {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-const todayStr = () => localDateStr();
-
-const dateLabel = (d: string) => {
-  const today = todayStr();
-  const yDate = new Date(); yDate.setDate(yDate.getDate() - 1);
-  const yesterday = localDateStr(yDate);
-  if (d === today) return '오늘';
-  if (d === yesterday) return '어제';
-  return d;
-};
 
 export default function WorkoutScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -53,13 +38,16 @@ export default function WorkoutScreen() {
   const [viewDate, setViewDate] = useState(todayStr());
   const [memo, setMemo] = useState('');
   const [memoEdit, setMemoEdit] = useState(false);
-  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
-  const [datePickerInput, setDatePickerInput] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showLogDateCalendar, setShowLogDateCalendar] = useState(false);
 
   const [exerciseName, setExerciseName] = useState('');
   const [durationMin, setDurationMin] = useState('');
   const [kcalBurned, setKcalBurned] = useState('');
   const [logDate, setLogDate] = useState(todayStr());
+
+  const [editMode, setEditMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const fetchWorkouts = useCallback(async (date: string) => {
     try {
@@ -70,13 +58,19 @@ export default function WorkoutScreen() {
       setWorkouts(res.data || []);
       setMemo(savedMemo || '');
       setMemoEdit(false);
-    } catch { /* */ }
+    } catch {
+    Alert.alert('오류', '운동 기록을 불러오지 못했습니다.');
+  }
   }, []);
 
   useFocusEffect(useCallback(() => {
+    setViewDate(todayStr());
+  }, []));
+
+  useEffect(() => {
     setLoading(true);
     fetchWorkouts(viewDate).finally(() => setLoading(false));
-  }, [fetchWorkouts, viewDate]));
+  }, [viewDate, fetchWorkouts]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -97,9 +91,7 @@ export default function WorkoutScreen() {
       input.type = 'date';
       input.max = todayStr();
       input.value = viewDate;
-      input.style.position = 'fixed';
-      input.style.opacity = '0';
-      input.style.pointerEvents = 'none';
+      input.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
       document.body.appendChild(input);
       input.onchange = (e: any) => {
         if ((e.target as HTMLInputElement).value) setViewDate((e.target as HTMLInputElement).value);
@@ -107,8 +99,7 @@ export default function WorkoutScreen() {
       };
       input.click();
     } else {
-      setDatePickerInput(viewDate);
-      setShowDatePickerModal(true);
+      setShowCalendar(true);
     }
   };
 
@@ -173,8 +164,49 @@ export default function WorkoutScreen() {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedIds.length) return;
+    Alert.alert('삭제', `${selectedIds.length}개를 삭제하시겠습니까?`, [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(selectedIds.map(id => deleteWorkout(id)));
+          setSelectedIds([]);
+          setEditMode(false);
+          await fetchWorkouts(viewDate);
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
+  const handleDeleteAllWorkouts = () => {
+    if (!workouts.length) return;
+    Alert.alert('전체 삭제', '현재 날짜의 모든 운동 기록을 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      { text: '전체 삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(workouts.map(w => deleteWorkout(w.workoutId)));
+          setSelectedIds([]);
+          setEditMode(false);
+          await fetchWorkouts(viewDate);
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
   const totalKcal = workouts.reduce((s, w) => s + w.kcalBurned, 0);
   const totalMin = workouts.reduce((s, w) => s + w.durationMin, 0);
+
 
   return (
     <View style={styles.container}>
@@ -201,13 +233,20 @@ export default function WorkoutScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>💪 {dateLabel(viewDate)}의 운동</Text>
-            <Text style={styles.headerSub}>총 {totalMin}분 · {totalKcal} kcal 소모</Text>
+          <View style={{ flex: 1, flexShrink: 1, marginRight: 8 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>💪 {dateLabel(viewDate)}의 운동</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>총 {totalMin}분 · {totalKcal} kcal 소모</Text>
           </View>
-          <TouchableOpacity style={styles.addBtn} onPress={() => { setLogDate(viewDate); setModalVisible(true); }}>
-            <Text style={styles.addBtnText}>+ 추가</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {workouts.length > 0 && (
+              <TouchableOpacity style={styles.editBtn} onPress={() => { setEditMode(!editMode); setSelectedIds([]); }}>
+                <Text style={styles.editBtnText}>{editMode ? '완료' : '편집'}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.addBtn} onPress={() => { setLogDate(todayStr()); setModalVisible(true); }}>
+              <Text style={styles.addBtnText}>+ 추가</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* 한줄 요약 */}
@@ -266,7 +305,17 @@ export default function WorkoutScreen() {
           </View>
         ) : (
           workouts.map((w) => (
-            <View key={w.workoutId} style={styles.workoutCard}>
+            <TouchableOpacity
+              key={w.workoutId}
+              style={[styles.workoutCard, editMode && selectedIds.includes(w.workoutId) && { backgroundColor: COLORS.secondary + '15' }]}
+              onPress={editMode ? () => toggleSelect(w.workoutId) : undefined}
+              activeOpacity={editMode ? 0.7 : 1}
+            >
+              {editMode && (
+                <View style={[styles.checkbox, selectedIds.includes(w.workoutId) && styles.checkboxSelected]}>
+                  {selectedIds.includes(w.workoutId) && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+              )}
               <View style={styles.workoutLeft}>
                 <Text style={styles.workoutEmoji}>
                   {PRESET_WORKOUTS.find((p) => p.name === w.exerciseName)?.emoji || '🏋️'}
@@ -278,14 +327,34 @@ export default function WorkoutScreen() {
               </View>
               <View style={styles.workoutRight}>
                 <Text style={styles.workoutKcal}>🔥 {w.kcalBurned} kcal</Text>
-                <TouchableOpacity onPress={() => handleDelete(w.workoutId)} style={styles.delBtn}>
-                  <Text style={styles.delBtnText}>✕</Text>
-                </TouchableOpacity>
+                {!editMode && (
+                  <TouchableOpacity onPress={() => handleDelete(w.workoutId)} style={styles.delBtn}>
+                    <Text style={styles.delBtnText}>✕</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
+
+      {editMode && (
+        <View style={styles.editActionBar}>
+          <TouchableOpacity style={styles.editCancelBtn} onPress={() => { setEditMode(false); setSelectedIds([]); }}>
+            <Text style={styles.editCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.editDeleteBtn, !selectedIds.length && { opacity: 0.4 }]}
+            onPress={handleDeleteSelected}
+            disabled={!selectedIds.length}
+          >
+            <Text style={styles.editDeleteText}>선택 삭제{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editDeleteAllBtn} onPress={handleDeleteAllWorkouts}>
+            <Text style={styles.editDeleteAllText}>모두 삭제</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Add Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -309,7 +378,13 @@ export default function WorkoutScreen() {
                 style={{ width: '100%', padding: '10px 14px', fontSize: 15, border: '1.5px solid #E0E7EF', borderRadius: 12, marginBottom: 12, color: '#2C3E50', backgroundColor: '#FAFBFD', boxSizing: 'border-box' } as any}
               />
             ) : (
-              <TextInput style={[styles.input, { marginBottom: 12 }]} value={logDate} onChangeText={setLogDate} placeholder="YYYY-MM-DD" placeholderTextColor="#B0BEC5" maxLength={10} />
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setShowLogDateCalendar(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.datePickerBtnText}>📅 {logDate}</Text>
+              </TouchableOpacity>
             )}
 
             {/* Presets */}
@@ -345,40 +420,20 @@ export default function WorkoutScreen() {
         </View>
       </Modal>
 
-      {/* 날짜 선택 모달 (네이티브) */}
-      <Modal visible={showDatePickerModal} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 24 }]}>
-            <Text style={styles.modalTitle}>날짜 선택</Text>
-            <TextInput
-              style={styles.input}
-              value={datePickerInput}
-              onChangeText={setDatePickerInput}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#B0BEC5"
-              keyboardType="numeric"
-              maxLength={10}
-              autoFocus
-            />
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: '#E0E7EF' }]} onPress={() => setShowDatePickerModal(false)}>
-                <Text style={[styles.saveBtnText, { color: '#78909C' }]}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, { flex: 2 }]}
-                onPress={() => {
-                  if (datePickerInput && datePickerInput <= todayStr()) {
-                    setViewDate(datePickerInput);
-                    setShowDatePickerModal(false);
-                  }
-                }}
-              >
-                <Text style={styles.saveBtnText}>이동</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <CalendarPicker
+        visible={showCalendar}
+        value={viewDate}
+        maxDate={todayStr()}
+        onSelect={setViewDate}
+        onClose={() => setShowCalendar(false)}
+      />
+      <CalendarPicker
+        visible={showLogDateCalendar}
+        value={logDate}
+        maxDate={todayStr()}
+        onSelect={setLogDate}
+        onClose={() => setShowLogDateCalendar(false)}
+      />
     </View>
   );
 }
@@ -386,6 +441,12 @@ export default function WorkoutScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: 20, paddingBottom: 32 },
+  datePickerBtn: {
+    borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12,
+    backgroundColor: '#FAFBFD',
+  },
+  datePickerBtnText: { fontSize: 15, color: '#2C3E50', fontWeight: '600' },
   dateNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, gap: 16 },
   dateArrow: { padding: 8 },
   dateArrowText: { fontSize: 28, color: COLORS.primary, fontWeight: '300', lineHeight: 32 },
@@ -396,6 +457,18 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, color: '#78909C', marginTop: 2 },
   addBtn: { backgroundColor: COLORS.secondary, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  editBtn: { backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  editBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D0D8E4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  checkboxSelected: { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary },
+  checkmark: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  editActionBar: { flexDirection: 'row', padding: 12, gap: 8, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: '#E0E7EF' },
+  editCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E0E7EF', alignItems: 'center' },
+  editCancelText: { fontSize: 13, fontWeight: '600', color: '#78909C' },
+  editDeleteBtn: { flex: 2, paddingVertical: 12, borderRadius: 12, backgroundColor: '#FFB74D', alignItems: 'center' },
+  editDeleteText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  editDeleteAllBtn: { flex: 1.5, paddingVertical: 12, borderRadius: 12, backgroundColor: '#FF6B6B', alignItems: 'center' },
+  editDeleteAllText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   memoCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.card, borderRadius: 14, padding: 14, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: COLORS.secondary },
   memoIcon: { fontSize: 18 },
   memoText: { fontSize: 14, color: COLORS.text, fontWeight: '500', flex: 1 },
@@ -412,9 +485,9 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: COLORS.text, fontWeight: '600', marginTop: 12 },
   emptySubText: { fontSize: 13, color: '#78909C', marginTop: 4 },
   workoutCard: { backgroundColor: COLORS.card, borderRadius: 18, padding: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  workoutLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  workoutLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, flexShrink: 1 },
   workoutEmoji: { fontSize: 32 },
-  workoutName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  workoutName: { fontSize: 16, fontWeight: '700', color: COLORS.text, flexShrink: 1 },
   workoutDuration: { fontSize: 13, color: '#78909C', marginTop: 2 },
   workoutRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   workoutKcal: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
@@ -429,7 +502,7 @@ const styles = StyleSheet.create({
   presetBtn: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderWidth: 1.5, borderColor: '#E0E7EF', backgroundColor: '#FAFBFD', marginRight: 8 },
   presetBtnActive: { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary },
   presetEmoji: { fontSize: 22 },
-  presetText: { fontSize: 11, color: '#78909C', fontWeight: '600', marginTop: 2 },
+  presetText: { fontSize: 11, color: '#78909C', fontWeight: '600', marginTop: 2, textAlign: 'center' },
   input: { borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: COLORS.text, backgroundColor: '#FAFBFD', marginBottom: 14 },
   inputRow: { flexDirection: 'row' },
   saveBtn: { backgroundColor: COLORS.secondary, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 4, shadowColor: COLORS.secondary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },

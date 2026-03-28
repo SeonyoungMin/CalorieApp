@@ -14,17 +14,9 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getWeightList, saveWeight, deleteWeight } from '../api/api';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  purple: '#9C88FF',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import { todayStr, dateLabel } from '../utils/dateUtils';
+import CalendarPicker from '../components/CalendarPicker';
 
 interface WeightRecord {
   weightId: number;
@@ -35,20 +27,23 @@ interface WeightRecord {
 function MiniChart({ data }: { data: WeightRecord[] }) {
   if (data.length < 2) return null;
   const recent = data.slice(-7);
-  const maxW = Math.max(...recent.map((d) => d.weightKg));
-  const minW = Math.min(...recent.map((d) => d.weightKg));
+  const maxW = Math.max(...recent.map((d) => Number(d.weightKg) || 0));
+  const minW = Math.min(...recent.map((d) => Number(d.weightKg) || 0));
   const range = maxW - minW || 1;
   const chartH = 80;
 
   return (
     <View style={{ marginTop: 12 }}>
       <Text style={{ fontSize: 13, fontWeight: '600', color: '#78909C', marginBottom: 8 }}>최근 7일 변화</Text>
-      <View style={{ height: chartH, flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
         {recent.map((d, i) => {
-          const barH = ((d.weightKg - minW) / range) * (chartH - 20) + 20;
+          const kg = Number(d.weightKg) || 0;
+          const barH = ((kg - minW) / range) * (chartH - 32) + 16;
+          const dateObj = d.logDate ? new Date(d.logDate + 'T12:00:00') : null;
+          const dayLabel = dateObj && !isNaN(dateObj.getTime()) ? `${dateObj.getDate()}일` : '-';
           return (
             <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 8, color: '#78909C', marginBottom: 2 }}>{d.weightKg}</Text>
+              <Text style={{ fontSize: 8, color: '#78909C', marginBottom: 2 }}>{kg}</Text>
               <View
                 style={{
                   width: '70%',
@@ -58,9 +53,7 @@ function MiniChart({ data }: { data: WeightRecord[] }) {
                   opacity: i === recent.length - 1 ? 1 : 0.5,
                 }}
               />
-              <Text style={{ fontSize: 8, color: '#B0BEC5', marginTop: 2 }}>
-                {new Date(d.logDate).getDate()}일
-              </Text>
+              <Text style={{ fontSize: 8, color: '#B0BEC5', marginTop: 2 }}>{dayLabel}</Text>
             </View>
           );
         })}
@@ -76,17 +69,21 @@ export default function WeightScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [weightInput, setWeightInput] = useState('');
+  const [logDate, setLogDate] = useState(todayStr());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
       const res = await getWeightList();
       const sorted = (res.data || []).sort(
         (a: WeightRecord, b: WeightRecord) =>
-          new Date(b.logDate).getTime() - new Date(a.logDate).getTime()
+          new Date(b.logDate + 'T12:00:00').getTime() - new Date(a.logDate + 'T12:00:00').getTime()
       );
       setRecords(sorted);
     } catch {
-      //
+      Alert.alert('오류', '체중 기록을 불러오지 못했습니다.');
     }
   }, []);
 
@@ -106,10 +103,11 @@ export default function WeightScreen() {
   const doSave = async (kg: number) => {
     setSaving(true);
     try {
-      await saveWeight(kg);
+      await saveWeight(kg, logDate);
       await fetchData();
       setModalVisible(false);
       setWeightInput('');
+      setLogDate(todayStr());
     } catch (e: any) {
       Alert.alert('저장 실패', e?.response?.data?.message || '다시 시도해주세요.');
     } finally {
@@ -123,25 +121,32 @@ export default function WeightScreen() {
       Alert.alert('입력 오류', '유효한 체중을 입력해주세요. (1~300 kg)');
       return;
     }
-    const today = new Date().toISOString().split('T')[0];
-    const alreadyToday = records.some((r) => r.logDate === today);
-    if (alreadyToday) {
-      Alert.alert('오늘 기록 있음', '오늘 이미 체중을 기록했습니다. 추가로 저장할까요?', [
+    const alreadyOnDate = records.some((r) => r.logDate === logDate);
+    if (alreadyOnDate) {
+      Alert.alert('기록 있음', `${logDate}에 이미 체중을 기록했습니다. 추가로 저장할까요?`, [
         { text: '취소', style: 'cancel' },
         { text: '저장', onPress: () => doSave(kg) },
       ]);
       return;
     }
-    setSaving(true);
-    try {
-      await saveWeight(kg);
-      await fetchData();
-      setModalVisible(false);
-      setWeightInput('');
-    } catch (e: any) {
-      Alert.alert('저장 실패', e?.response?.data?.message || '다시 시도해주세요.');
-    } finally {
-      setSaving(false);
+    await doSave(kg);
+  };
+
+  const openDatePicker = () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.max = todayStr();
+      input.value = logDate;
+      input.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+      document.body.appendChild(input);
+      input.onchange = (e: any) => {
+        if ((e.target as HTMLInputElement).value) setLogDate((e.target as HTMLInputElement).value);
+        document.body.removeChild(input);
+      };
+      input.click();
+    } else {
+      setShowDatePicker(true);
     }
   };
 
@@ -163,9 +168,49 @@ export default function WeightScreen() {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedIds.length) return;
+    Alert.alert('삭제', `${selectedIds.length}개를 삭제하시겠습니까?`, [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(selectedIds.map(id => deleteWeight(id)));
+          setSelectedIds([]);
+          setEditMode(false);
+          await fetchData();
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
+  const handleDeleteAllWeight = () => {
+    if (!records.length) return;
+    Alert.alert('전체 삭제', '모든 체중 기록을 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      { text: '전체 삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(records.map(r => deleteWeight(r.weightId)));
+          setSelectedIds([]);
+          setEditMode(false);
+          await fetchData();
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
   const latest = records[0];
   const prev = records[1];
-  const diff = latest && prev ? (latest.weightKg - prev.weightKg).toFixed(1) : null;
+  const diff = latest && prev ? (Number(latest.weightKg) - Number(prev.weightKg)).toFixed(1) : null;
   const diffNum = diff ? parseFloat(diff) : null;
 
   return (
@@ -194,6 +239,7 @@ export default function WeightScreen() {
                 <Text style={styles.currentWeight}>{latest.weightKg}</Text>
                 <Text style={styles.currentUnit}> kg</Text>
               </View>
+              <Text style={styles.currentDate}>{latest.logDate}</Text>
               {diff !== null && diffNum !== null && (
                 <View style={[styles.diffBadge, { backgroundColor: diffNum <= 0 ? '#E8F5E9' : '#FFF3E0' }]}>
                   <Text style={[styles.diffText, { color: diffNum <= 0 ? COLORS.success : COLORS.warning }]}>
@@ -223,30 +269,68 @@ export default function WeightScreen() {
           </View>
         ) : (
           <View style={styles.listCard}>
-            <Text style={styles.listTitle}>기록 목록</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={styles.listTitle}>기록 목록</Text>
+              {records.length > 0 && (
+                <TouchableOpacity style={styles.editBtn} onPress={() => { setEditMode(!editMode); setSelectedIds([]); }}>
+                  <Text style={styles.editBtnText}>{editMode ? '완료' : '편집'}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             {records.map((r, idx) => (
-              <View key={r.weightId} style={[styles.recordRow, idx < records.length - 1 && styles.recordBorder]}>
+              <TouchableOpacity
+                key={r.weightId}
+                style={[styles.recordRow, idx < records.length - 1 && styles.recordBorder, editMode && selectedIds.includes(r.weightId) && { backgroundColor: COLORS.primary + '10' }]}
+                onPress={editMode ? () => toggleSelect(r.weightId) : undefined}
+                activeOpacity={editMode ? 0.7 : 1}
+              >
+                {editMode && (
+                  <View style={[styles.checkbox, selectedIds.includes(r.weightId) && styles.checkboxSelected]}>
+                    {selectedIds.includes(r.weightId) && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                )}
                 <View>
                   <Text style={styles.recordDate}>{r.logDate}</Text>
                   {idx < records.length - 1 && (
                     <Text style={styles.recordDiff}>
-                      {(r.weightKg - records[idx + 1].weightKg) > 0
-                        ? `▲ ${(r.weightKg - records[idx + 1].weightKg).toFixed(1)}`
-                        : `▼ ${Math.abs(r.weightKg - records[idx + 1].weightKg).toFixed(1)}`} kg
+                      {(() => {
+                        const d = Number(r.weightKg) - Number(records[idx + 1].weightKg);
+                        return d > 0 ? `▲ ${d.toFixed(1)}` : `▼ ${Math.abs(d).toFixed(1)}`;
+                      })()} kg
                     </Text>
                   )}
                 </View>
                 <View style={styles.recordRight}>
                   <Text style={styles.recordWeight}>{r.weightKg} kg</Text>
-                  <TouchableOpacity onPress={() => handleDelete(r.weightId)} style={styles.delBtn}>
-                    <Text style={styles.delBtnText}>✕</Text>
-                  </TouchableOpacity>
+                  {!editMode && (
+                    <TouchableOpacity onPress={() => handleDelete(r.weightId)} style={styles.delBtn}>
+                      <Text style={styles.delBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
       </ScrollView>
+
+      {editMode && (
+        <View style={styles.editActionBar}>
+          <TouchableOpacity style={styles.editCancelBtn} onPress={() => { setEditMode(false); setSelectedIds([]); }}>
+            <Text style={styles.editCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.editDeleteBtn, !selectedIds.length && { opacity: 0.4 }]}
+            onPress={handleDeleteSelected}
+            disabled={!selectedIds.length}
+          >
+            <Text style={styles.editDeleteText}>선택 삭제{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editDeleteAllBtn} onPress={handleDeleteAllWeight}>
+            <Text style={styles.editDeleteAllText}>모두 삭제</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -254,11 +338,15 @@ export default function WeightScreen() {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>체중 기록</Text>
-              <TouchableOpacity onPress={() => { setModalVisible(false); setWeightInput(''); }}>
+              <TouchableOpacity onPress={() => { setModalVisible(false); setWeightInput(''); setLogDate(todayStr()); }}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.label}>체중 (kg)</Text>
+            <Text style={styles.label}>날짜</Text>
+            <TouchableOpacity style={styles.datePickerBtn} onPress={openDatePicker}>
+              <Text style={styles.datePickerText}>📅 {dateLabel(logDate)}</Text>
+            </TouchableOpacity>
+            <Text style={[styles.label, { marginTop: 12 }]}>체중 (kg)</Text>
             <TextInput
               style={styles.input}
               placeholder="예) 65.5"
@@ -281,6 +369,14 @@ export default function WeightScreen() {
           </View>
         </View>
       </Modal>
+
+      <CalendarPicker
+        visible={showDatePicker}
+        value={logDate}
+        maxDate={todayStr()}
+        onSelect={(date) => { setLogDate(date); setShowDatePicker(false); }}
+        onClose={() => setShowDatePicker(false)}
+      />
     </View>
   );
 }
@@ -314,6 +410,7 @@ const styles = StyleSheet.create({
   },
   currentLeft: {},
   currentLabel: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+  currentDate: { fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 6 },
   currentWeightRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
   currentWeight: { fontSize: 48, fontWeight: '900', color: '#fff' },
   currentUnit: { fontSize: 20, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
@@ -351,7 +448,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  listTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
+  listTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 0 },
   recordRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   recordBorder: { borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
   recordDate: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
@@ -360,6 +457,18 @@ const styles = StyleSheet.create({
   recordWeight: { fontSize: 18, fontWeight: '800', color: COLORS.purple },
   delBtn: { padding: 4 },
   delBtnText: { color: '#B0BEC5', fontSize: 16 },
+  editBtn: { backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  editBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D0D8E4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  checkboxSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkmark: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  editActionBar: { flexDirection: 'row', padding: 12, gap: 8, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: '#E0E7EF' },
+  editCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E0E7EF', alignItems: 'center' },
+  editCancelText: { fontSize: 13, fontWeight: '600', color: '#78909C' },
+  editDeleteBtn: { flex: 2, paddingVertical: 12, borderRadius: 12, backgroundColor: '#FFB74D', alignItems: 'center' },
+  editDeleteText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  editDeleteAllBtn: { flex: 1.5, paddingVertical: 12, borderRadius: 12, backgroundColor: '#FF6B6B', alignItems: 'center' },
+  editDeleteAllText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalCard: {
     backgroundColor: COLORS.card,
@@ -385,6 +494,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   lastWeight: { fontSize: 12, color: '#78909C', textAlign: 'center', marginBottom: 16 },
+  datePickerBtn: {
+    borderWidth: 1.5,
+    borderColor: '#E0E7EF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FAFBFD',
+    alignItems: 'center',
+  },
+  datePickerText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
   saveBtn: {
     backgroundColor: COLORS.purple,
     borderRadius: 14,

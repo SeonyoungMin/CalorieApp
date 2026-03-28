@@ -7,12 +7,20 @@ import { getWeightList, getWeeklyStats } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import PremiumModal from '../components/PremiumModal';
 import { useSubscription } from '../hooks/useSubscription';
+import { COLORS } from '../theme';
 
-const COLORS = {
-  primary: '#FF6B6B', secondary: '#4ECDC4', gold: '#FCC419',
-  purple: '#9C88FF', green: '#51CF66', bg: '#F0F4F8',
-  card: '#FFFFFF', text: '#2C3E50',
-};
+interface WeeklyStat {
+  date: string;
+  foodKcal: number;
+  burnedKcal: number;
+  netKcal: number;
+}
+
+interface WeightRecord {
+  weightId: number;
+  weightKg: number;
+  logDate: string;
+}
 
 const TABS = [
   { key: 'nutrients', label: '영양소', emoji: '🥗' },
@@ -28,8 +36,8 @@ export default function StatsScreen() {
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('nutrients');
   const [loading, setLoading] = useState(true);
-  const [weeklyData, setWeeklyData] = useState<any[]>([]);
-  const [weightList, setWeightList] = useState<any[]>([]);
+  const [weeklyData, setWeeklyData] = useState<WeeklyStat[]>([]);
+  const [weightList, setWeightList] = useState<WeightRecord[]>([]);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
 
@@ -40,7 +48,7 @@ export default function StatsScreen() {
         const [wRes, wgRes] = await Promise.all([getWeeklyStats(), getWeightList()]);
         setWeeklyData(wRes.data || []);
         const sorted = (wgRes.data || []).sort(
-          (a: any, b: any) => new Date(a.logDate).getTime() - new Date(b.logDate).getTime()
+          (a: WeightRecord, b: WeightRecord) => new Date(a.logDate).getTime() - new Date(b.logDate).getTime()
         );
         setWeightList(sorted);
       } catch (_) {}
@@ -89,8 +97,8 @@ export default function StatsScreen() {
 
   // 체중 그래프
   const weightGoal = userWeightKg ? Math.max(userWeightKg - 5, 40) : null; // 현재체중 -5kg 목표 (설정 전)
-  const maxW = weightList.length > 0 ? Math.max(...weightList.map((w: any) => w.weightKg)) + 2 : 80;
-  const minW = weightList.length > 0 ? Math.min(...weightList.map((w: any) => w.weightKg)) - 2 : 50;
+  const maxW = weightList.length > 0 ? Math.max(...weightList.map((w) => w.weightKg)) + 2 : 80;
+  const minW = weightList.length > 0 ? Math.min(...weightList.map((w) => w.weightKg)) - 2 : 50;
 
   return (
     <View style={styles.container}>
@@ -160,7 +168,7 @@ export default function StatsScreen() {
               <View style={styles.barChartWrap}>
                 {weeklyData.length > 0 ? weeklyData.map((d, i) => {
                   const h = Math.max((d.foodKcal / GOAL_KCAL) * 100, 4);
-                  const day = DAYS_KR[new Date(d.date).getDay()];
+                  const day = DAYS_KR[new Date(d.date + 'T12:00:00').getDay()];
                   return (
                     <View key={i} style={styles.barCol}>
                       <Text style={styles.barKcal}>{d.foodKcal > 0 ? d.foodKcal : ''}</Text>
@@ -246,7 +254,7 @@ export default function StatsScreen() {
                 <View style={styles.card}>
                   <View style={styles.row}>
                     <InfoChip label="현재" value={`${weightList[weightList.length - 1]?.weightKg}kg`} color={COLORS.primary} />
-                    <InfoChip label="최저" value={`${Math.min(...weightList.map((w: any) => w.weightKg))}kg`} color={COLORS.green} />
+                    <InfoChip label="최저" value={`${Math.min(...weightList.map((w) => w.weightKg))}kg`} color={COLORS.green} />
                     <InfoChip label="변화" value={`${(weightList[weightList.length - 1]?.weightKg - weightList[0]?.weightKg).toFixed(1)}kg`} color={COLORS.secondary} />
                   </View>
                 </View>
@@ -262,7 +270,7 @@ export default function StatsScreen() {
                     <Text style={{ fontSize: 13, color: '#455A64', marginTop: 4, lineHeight: 20 }}>
                       신체 정보 기반 목표 ({weightGoal}kg)까지{'\n'}
                       약 <Text style={{ fontWeight: '800', color: COLORS.green }}>
-                        {Math.max(0, Math.abs(Math.round((weightList[weightList.length - 1]?.weightKg - weightGoal) / 0.5)))}주
+                        {Math.max(0, Math.abs(Math.round(((Number(weightList[weightList.length - 1]?.weightKg) || 0) - (weightGoal ?? 0)) / 0.5)))}주
                       </Text> 소요 예상이에요
                     </Text>
                   </View>
@@ -276,7 +284,7 @@ export default function StatsScreen() {
   );
 }
 
-function CalendarGrid({ year, month, data, goalKcal }: any) {
+function CalendarGrid({ year, month, data, goalKcal }: { year: number; month: number; data: Record<string, number>; goalKcal: number }) {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = Array(firstDay).fill(null);
@@ -311,7 +319,7 @@ function CalendarGrid({ year, month, data, goalKcal }: any) {
   );
 }
 
-function WeightChart({ data, min, max, goal }: any) {
+function WeightChart({ data, min, max, goal }: { data: WeightRecord[]; min: number; max: number; goal: number | null }) {
   const h = 120;
   const range = max - min;
   return (
@@ -327,7 +335,7 @@ function WeightChart({ data, min, max, goal }: any) {
         )}
         {/* 포인트들 */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: h, gap: 8 }}>
-          {data.map((w: any, i: number) => {
+          {data.map((w, i) => {
             const barH = Math.max(((w.weightKg - min) / range) * h, 4);
             return (
               <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: h }}>
@@ -338,9 +346,9 @@ function WeightChart({ data, min, max, goal }: any) {
         </View>
       </View>
       <View style={{ flexDirection: 'row', marginTop: 4 }}>
-        {data.map((w: any, i: number) => (
+        {data.map((w, i) => (
           <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 9, color: '#B0BEC5' }}>{new Date(w.logDate).getDate()}일</Text>
+            <Text style={{ fontSize: 9, color: '#B0BEC5' }}>{new Date(w.logDate + 'T12:00:00').getDate()}일</Text>
             <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.text }}>{w.weightKg}</Text>
           </View>
         ))}
@@ -353,7 +361,7 @@ function WeightChart({ data, min, max, goal }: any) {
   );
 }
 
-function InfoChip({ label, value, color }: any) {
+function InfoChip({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <Text style={{ fontSize: 11, color: '#78909C', marginBottom: 4 }}>{label}</Text>
@@ -365,12 +373,12 @@ function InfoChip({ label, value, color }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  tabBar: { backgroundColor: COLORS.card, maxHeight: 72, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
-  tabContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  tab: { alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0 },
+  tabBar: { backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
+  tabContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
+  tab: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F4F8', flexShrink: 0, gap: 4 },
   tabActive: { backgroundColor: COLORS.primary },
-  tabEmoji: { fontSize: 18 },
-  tabLabel: { fontSize: 11, fontWeight: '600', color: '#78909C', marginTop: 2 },
+  tabEmoji: { fontSize: 15 },
+  tabLabel: { fontSize: 12, fontWeight: '600', color: '#78909C' },
   tabLabelActive: { color: '#fff' },
   pageTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
   pageDesc: { fontSize: 13, color: '#78909C', marginBottom: 20 },

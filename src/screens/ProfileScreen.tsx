@@ -12,16 +12,13 @@ import {
 } from 'react-native';
 import { setGoalKcal, setUserProfile } from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { COLORS } from '../theme';
 
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  purple: '#9C88FF',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
+const getBmiInfo = (bmi: number) => {
+  if (bmi < 18.5) return { label: '저체중', color: '#4FC3F7' };
+  if (bmi < 23)   return { label: '정상', color: COLORS.success };
+  if (bmi < 25)   return { label: '과체중', color: COLORS.warning };
+  return           { label: '비만', color: COLORS.primary };
 };
 
 const MENU_ITEMS = [
@@ -109,6 +106,17 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
           <Text style={styles.username}>{nickname || '내 프로필'}</Text>
           <Text style={styles.usernameSubt}>목표 {contextGoal} kcal · 건강 목표를 설정하고 관리하세요</Text>
+          {userWeightKg && userHeightCm && (() => {
+            const bmiVal = userWeightKg / Math.pow(userHeightCm / 100, 2);
+            const { label, color } = getBmiInfo(bmiVal);
+            return (
+              <View style={[styles.bmiBadge, { backgroundColor: color }]}>
+                <Text style={styles.bmiBadgeText}>
+                  BMI {bmiVal.toFixed(1)} · {label}
+                </Text>
+              </View>
+            );
+          })()}
         </View>
 
         {/* Menu Items */}
@@ -247,14 +255,17 @@ export default function ProfileScreen({ navigation }: any) {
                 />
               </View>
             </View>
-            {weightKg && heightCm && parseFloat(weightKg) > 0 && parseFloat(heightCm) > 0 && (
-              <View style={styles.bmiPreview}>
-                <Text style={styles.bmiPreviewText}>
-                  BMI:{' '}
-                  {(parseFloat(weightKg) / Math.pow(parseFloat(heightCm) / 100, 2)).toFixed(1)}
-                </Text>
-              </View>
-            )}
+            {weightKg && heightCm && parseFloat(weightKg) > 0 && parseFloat(heightCm) > 0 && (() => {
+              const bmiVal = parseFloat(weightKg) / Math.pow(parseFloat(heightCm) / 100, 2);
+              const { label, color } = getBmiInfo(bmiVal);
+              return (
+                <View style={[styles.bmiPreview, { backgroundColor: color + '20', borderColor: color, borderWidth: 1.5 }]}>
+                  <Text style={[styles.bmiPreviewText, { color }]}>
+                    BMI {bmiVal.toFixed(1)} · {label}
+                  </Text>
+                </View>
+              );
+            })()}
             <TouchableOpacity
               style={[styles.saveBtn, { backgroundColor: COLORS.secondary }, savingProfile && { opacity: 0.6 }]}
               onPress={handleSaveProfile}
@@ -296,6 +307,14 @@ const styles = StyleSheet.create({
   avatarEmoji: { fontSize: 40 },
   username: { fontSize: 22, fontWeight: '800', color: '#fff' },
   usernameSubt: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
+  bmiBadge: {
+    marginTop: 10,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 5,
+  },
+  bmiBadgeText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   menuCard: {
     backgroundColor: COLORS.card,
     borderRadius: 20,

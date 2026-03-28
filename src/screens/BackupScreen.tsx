@@ -1,26 +1,47 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Alert, Platform,
+  ScrollView, Share, Alert, ActivityIndicator,
 } from 'react-native';
 import { useSubscription } from '../hooks/useSubscription';
 import PremiumModal from '../components/PremiumModal';
-import { exportUserData } from '../api/api';
 import { useAuth } from '../context/AuthContext';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import { getTodayMeals, getTodayWorkouts, getWeightList, getWeeklyStats } from '../api/api';
+import { generateHealthReport } from '../services/claudeService';
 
 export default function BackupScreen({ navigation }: any) {
   const { isPremium, activatePremium, cancelPremium } = useSubscription();
-  const { nickname } = useAuth();
+  const { nickname, goalKcal } = useAuth();
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const [mealsRes, workoutsRes, weightRes, statsRes] = await Promise.all([
+        getTodayMeals().catch(() => ({ data: [] })),
+        getTodayWorkouts().catch(() => ({ data: [] })),
+        getWeightList().catch(() => ({ data: [] })),
+        getWeeklyStats().catch(() => ({ data: null })),
+      ]);
+
+      const report = await generateHealthReport({
+        nickname: nickname || '사용자',
+        weeklyStats: statsRes.data,
+        recentMeals: mealsRes.data || [],
+        recentWorkouts: workoutsRes.data || [],
+        weightList: weightRes.data || [],
+        goalKcal: goalKcal || 2000,
+      });
+
+      await Share.share({ message: report, title: 'CalorieApp 건강 리포트' });
+    } catch {
+      Alert.alert('오류', '리포트 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // 프리미엄 게이트
   if (!isPremium) {
@@ -42,35 +63,6 @@ export default function BackupScreen({ navigation }: any) {
       </View>
     );
   }
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const res = await exportUserData();
-      const json = JSON.stringify(res.data, null, 2);
-      const filename = `calorieapp_backup_${res.data.exportDate}.json`;
-
-      if (Platform.OS === 'web') {
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } else {
-        // 네이티브: Share API
-        const { Share } = require('react-native');
-        await Share.share({ message: json, title: filename });
-      }
-    } catch (e) {
-      Alert.alert('오류', '데이터 내보내기에 실패했습니다.');
-    } finally {
-      setExporting(false);
-    }
-  };
 
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -119,20 +111,19 @@ export default function BackupScreen({ navigation }: any) {
 
       {/* 내보내기 */}
       <View style={styles.exportCard}>
-        <Text style={styles.exportTitle}>📥 내 데이터 내보내기</Text>
+        <Text style={styles.exportTitle}>📤 AI 건강 리포트 내보내기</Text>
         <Text style={styles.exportDesc}>
-          식단, 운동, 체중 기록 전체를 JSON 파일로 저장합니다.
-          {Platform.OS === 'web' ? ' 파일이 자동으로 다운로드됩니다.' : ' 공유 또는 저장할 수 있습니다.'}
+          AI가 내 식단·운동·체중 데이터를 분석해 공유하기 좋은 리포트를 만들어 드려요.{'\n'}메모장, 카카오톡, 노트 앱 등에 바로 공유할 수 있어요.
         </Text>
         <TouchableOpacity
           style={[styles.exportBtn, exporting && { opacity: 0.6 }]}
           onPress={handleExport}
           disabled={exporting}
-          activeOpacity={0.8}
         >
           {exporting
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.exportBtnText}>데이터 내보내기 (JSON)</Text>}
+            : <Text style={styles.exportBtnText}>🤖 AI 리포트 생성 & 공유</Text>
+          }
         </TouchableOpacity>
       </View>
 

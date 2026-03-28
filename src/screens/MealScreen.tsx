@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,16 +17,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import { localDateStr, todayStr, dateLabel } from '../utils/dateUtils';
+import CalendarPicker from '../components/CalendarPicker';
 
 const MEAL_TYPES = ['아침', '점심', '저녁', '간식'];
 const MEAL_EMOJI: Record<string, string> = {
@@ -52,19 +45,6 @@ interface Meal {
   foods: Food[];
 }
 
-const localDateStr = (date = new Date()) => {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-const todayStr = () => localDateStr();
-
-const dateLabel = (d: string) => {
-  const today = todayStr();
-  const yDate = new Date(); yDate.setDate(yDate.getDate() - 1);
-  const yesterday = localDateStr(yDate);
-  if (d === today) return '오늘';
-  if (d === yesterday) return '어제';
-  return d;
-};
 
 export default function MealScreen() {
   const { goalKcal } = useAuth();
@@ -77,8 +57,10 @@ export default function MealScreen() {
   const [viewDate, setViewDate] = useState(todayStr());
   const [memo, setMemo] = useState('');
   const [memoEdit, setMemoEdit] = useState(false);
-  const [showDatePickerModal, setShowDatePickerModal] = useState(false);
-  const [datePickerInput, setDatePickerInput] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showLogDateCalendar, setShowLogDateCalendar] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedMealIds, setSelectedMealIds] = useState<number[]>([]);
 
   // Form state
   const [mealType, setMealType] = useState('아침');
@@ -97,7 +79,7 @@ export default function MealScreen() {
       setMemo(savedMemo || '');
       setMemoEdit(false);
     } catch {
-      //
+      Alert.alert('오류', '식사 기록을 불러오지 못했습니다.');
     }
   }, []);
 
@@ -112,9 +94,7 @@ export default function MealScreen() {
       input.type = 'date';
       input.max = todayStr();
       input.value = viewDate;
-      input.style.position = 'fixed';
-      input.style.opacity = '0';
-      input.style.pointerEvents = 'none';
+      input.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
       document.body.appendChild(input);
       input.onchange = (e: any) => {
         if ((e.target as HTMLInputElement).value) setViewDate((e.target as HTMLInputElement).value);
@@ -122,17 +102,22 @@ export default function MealScreen() {
       };
       input.click();
     } else {
-      setDatePickerInput(viewDate);
-      setShowDatePickerModal(true);
+      setShowCalendar(true);
     }
   };
 
+  // 탭 포커스 시 오늘 날짜로 리셋
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      fetchMeals(viewDate).finally(() => setLoading(false));
-    }, [fetchMeals, viewDate])
+      setViewDate(todayStr());
+    }, [])
   );
+
+  // viewDate 변경 시 (날짜 네비 or 포커스 리셋) 식사 목록 fetch
+  useEffect(() => {
+    setLoading(true);
+    fetchMeals(viewDate).finally(() => setLoading(false));
+  }, [viewDate, fetchMeals]);
 
   const moveDate = (delta: number) => {
     const d = new Date(viewDate + 'T12:00:00');
@@ -140,6 +125,7 @@ export default function MealScreen() {
     const next = localDateStr(d);
     if (next <= todayStr()) setViewDate(next);
   };
+
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -164,7 +150,7 @@ export default function MealScreen() {
 
   const resetForm = () => {
     setMealType('아침');
-    setLogDate(new Date().toISOString().split('T')[0]);
+    setLogDate(todayStr());
     setFoods([{ foodName: '', kcal: '' }]);
   };
 
@@ -174,11 +160,19 @@ export default function MealScreen() {
       Alert.alert('입력 오류', '음식 이름과 칼로리를 입력해주세요.');
       return;
     }
+    const hasInvalidKcal = validFoods.some((f) => {
+      const kcal = parseInt(f.kcal, 10);
+      return isNaN(kcal) || kcal < 0 || kcal > 9999;
+    });
+    if (hasInvalidKcal) {
+      Alert.alert('입력 오류', '칼로리는 0~9999 범위로 입력해주세요.');
+      return;
+    }
     setSaving(true);
     try {
       const foodData = validFoods.map((f) => ({
         foodName: f.foodName.trim(),
-        kcal: parseInt(f.kcal, 10) || 0,
+        kcal: parseInt(f.kcal, 10),
       }));
       const totalKcal = foodData.reduce((s, f) => s + f.kcal, 0);
       await saveMeal({ mealType, totalKcal, isText: true, foods: foodData, logDate });
@@ -233,7 +227,50 @@ export default function MealScreen() {
     }
   };
 
-  const totalKcal = meals.reduce((s, m) => s + m.totalKcal, 0);
+  const toggleSelectMeal = (id: number) => {
+    setSelectedMealIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelectedMeals = () => {
+    if (!selectedMealIds.length) return;
+    Alert.alert('삭제', `${selectedMealIds.length}개를 삭제하시겠습니까?`, [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(selectedMealIds.map(id => deleteMeal(id)));
+          setSelectedMealIds([]);
+          setEditMode(false);
+          await fetchMeals(viewDate);
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
+  const handleDeleteAllMeals = () => {
+    if (!meals.length) return;
+    Alert.alert('전체 삭제', '현재 날짜의 모든 식사 기록을 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      { text: '전체 삭제', style: 'destructive', onPress: async () => {
+        try {
+          await Promise.all(meals.map(m => deleteMeal(m.mealId)));
+          setSelectedMealIds([]);
+          setEditMode(false);
+          await fetchMeals(viewDate);
+        } catch {
+          Alert.alert('오류', '삭제에 실패했습니다.');
+        }
+      }},
+    ]);
+  };
+
+  const totalKcal = meals.reduce((s, m) => s + (Number(m.totalKcal) || 0), 0);
+  const kcalPct = goalKcal > 0 ? totalKcal / goalKcal : 0;
+  const kcalBarColor = kcalPct >= 0.9 ? COLORS.primary : kcalPct >= 0.6 ? COLORS.warning : COLORS.success;
+
 
   return (
     <View style={styles.container}>
@@ -268,19 +305,26 @@ export default function MealScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>🍽️ {dateLabel(viewDate)}의 식사</Text>
-            <Text style={styles.headerSub}>총 {totalKcal} kcal 섭취</Text>
+          <View style={{ flex: 1, flexShrink: 1, marginRight: 8 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>🍽️ {dateLabel(viewDate)}의 식사</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>총 {totalKcal} kcal 섭취</Text>
           </View>
           <View style={styles.headerBtns}>
-            {meals.length > 0 && viewDate === todayStr() && (
+            {meals.length > 0 && (
+              <TouchableOpacity style={styles.editBtn} onPress={() => { setEditMode(!editMode); setSelectedMealIds([]); }}>
+                <Text style={styles.editBtnText}>{editMode ? '완료' : '편집'}</Text>
+              </TouchableOpacity>
+            )}
+            {!editMode && meals.length > 0 && viewDate === todayStr() && (
               <TouchableOpacity style={styles.deleteAllBtn} onPress={handleDeleteAll}>
                 <Text style={styles.deleteAllText}>전체삭제</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.addBtn} onPress={() => { setLogDate(viewDate); setModalVisible(true); }}>
-              <Text style={styles.addBtnText}>+ 추가</Text>
-            </TouchableOpacity>
+            {!editMode && (
+              <TouchableOpacity style={styles.addBtn} onPress={() => { setLogDate(todayStr()); setModalVisible(true); }}>
+                <Text style={styles.addBtnText}>+ 추가</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -317,7 +361,7 @@ export default function MealScreen() {
             <View
               style={[
                 styles.kcalBarFill,
-                { width: `${Math.min((totalKcal / goalKcal) * 100, 100)}%` },
+                { width: `${Math.min(kcalPct * 100, 100)}%`, backgroundColor: kcalBarColor },
               ]}
             />
           </View>
@@ -329,37 +373,81 @@ export default function MealScreen() {
         ) : meals.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyEmoji}>🍽️</Text>
-            <Text style={styles.emptyText}>오늘 식사 기록이 없어요</Text>
+            <Text style={styles.emptyText}>{dateLabel(viewDate)} 식사 기록이 없어요</Text>
             <Text style={styles.emptySubText}>+ 추가 버튼으로 기록해보세요!</Text>
           </View>
         ) : (
-          meals.map((meal) => (
-            <View key={meal.mealId} style={styles.mealCard}>
-              <View style={styles.mealHeader}>
-                <View style={styles.mealTypeWrap}>
-                  <Text style={styles.mealEmoji}>{MEAL_EMOJI[meal.mealType] || '🍴'}</Text>
-                  <Text style={styles.mealType}>{meal.mealType}</Text>
-                </View>
-                <View style={styles.mealRight}>
-                  <Text style={styles.mealKcal}>{meal.totalKcal} kcal</Text>
-                  <TouchableOpacity onPress={() => handleDelete(meal.mealId)} style={styles.delBtn}>
-                    <Text style={styles.delBtnText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <View style={styles.foodList}>
-                {meal.foods.map((food, idx) => (
-                  <View key={idx} style={styles.foodRow}>
-                    <Text style={styles.foodName}>• {food.foodName}</Text>
-                    <Text style={styles.foodKcal}>{food.kcal} kcal</Text>
+          meals.map((meal) => {
+            const isSelected = selectedMealIds.includes(meal.mealId);
+            const cardContent = (
+              <View
+                key={meal.mealId}
+                style={[
+                  styles.mealCard,
+                  editMode && isSelected && { backgroundColor: COLORS.primary + '15' },
+                ]}
+              >
+                <View style={styles.mealHeader}>
+                  {editMode && (
+                    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                      {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                  )}
+                  <View style={styles.mealTypeWrap}>
+                    <Text style={styles.mealEmoji}>{MEAL_EMOJI[meal.mealType] || '🍴'}</Text>
+                    <Text style={styles.mealType}>{meal.mealType}</Text>
                   </View>
-                ))}
+                  <View style={styles.mealRight}>
+                    <Text style={styles.mealKcal}>{meal.totalKcal} kcal</Text>
+                    {!editMode && (
+                      <TouchableOpacity onPress={() => handleDelete(meal.mealId)} style={styles.delBtn}>
+                        <Text style={styles.delBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.foodList}>
+                  {meal.foods.map((food, idx) => (
+                    <View key={idx} style={styles.foodRow}>
+                      <Text style={styles.foodName}>• {food.foodName}</Text>
+                      <Text style={styles.foodKcal}>{food.kcal} kcal</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.mealTime}>{meal.logTime}</Text>
               </View>
-              <Text style={styles.mealTime}>{meal.logTime}</Text>
-            </View>
-          ))
+            );
+
+            if (editMode) {
+              return (
+                <TouchableOpacity key={meal.mealId} activeOpacity={0.7} onPress={() => toggleSelectMeal(meal.mealId)}>
+                  {cardContent}
+                </TouchableOpacity>
+              );
+            }
+            return cardContent;
+          })
         )}
       </ScrollView>
+
+      {/* Edit Action Bar */}
+      {editMode && (
+        <View style={styles.editActionBar}>
+          <TouchableOpacity style={styles.editCancelBtn} onPress={() => { setEditMode(false); setSelectedMealIds([]); }}>
+            <Text style={styles.editCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.editDeleteBtn, !selectedMealIds.length && { opacity: 0.4 }]}
+            onPress={handleDeleteSelectedMeals}
+            disabled={!selectedMealIds.length}
+          >
+            <Text style={styles.editDeleteText}>선택 삭제{selectedMealIds.length > 0 ? ` (${selectedMealIds.length})` : ''}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editDeleteAllBtn} onPress={handleDeleteAllMeals}>
+            <Text style={styles.editDeleteAllText}>모두 삭제</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Add Meal Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -378,7 +466,7 @@ export default function MealScreen() {
               <input
                 type="date"
                 value={logDate}
-                max={new Date().toISOString().split('T')[0]}
+                max={todayStr()}
                 onChange={(e: any) => setLogDate(e.target.value)}
                 style={{
                   width: '100%', padding: '10px 14px', fontSize: 15,
@@ -388,14 +476,13 @@ export default function MealScreen() {
                 } as any}
               />
             ) : (
-              <TextInput
-                style={[styles.foodInput, { marginBottom: 12 }]}
-                value={logDate}
-                onChangeText={setLogDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor="#B0BEC5"
-                maxLength={10}
-              />
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setShowLogDateCalendar(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.datePickerBtnText}>📅 {logDate}</Text>
+              </TouchableOpacity>
             )}
 
             {/* Meal Type Selector */}
@@ -460,40 +547,23 @@ export default function MealScreen() {
         </View>
       </Modal>
 
-      {/* 날짜 선택 모달 (네이티브) */}
-      <Modal visible={showDatePickerModal} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 24 }]}>
-            <Text style={styles.modalTitle}>날짜 선택</Text>
-            <TextInput
-              style={styles.input}
-              value={datePickerInput}
-              onChangeText={setDatePickerInput}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#B0BEC5"
-              keyboardType="numeric"
-              maxLength={10}
-              autoFocus
-            />
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: '#E0E7EF' }]} onPress={() => setShowDatePickerModal(false)}>
-                <Text style={[styles.saveBtnText, { color: '#78909C' }]}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, { flex: 2 }]}
-                onPress={() => {
-                  if (datePickerInput && datePickerInput <= todayStr()) {
-                    setViewDate(datePickerInput);
-                    setShowDatePickerModal(false);
-                  }
-                }}
-              >
-                <Text style={styles.saveBtnText}>이동</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* 날짜 달력 (헤더) */}
+      <CalendarPicker
+        visible={showCalendar}
+        value={viewDate}
+        maxDate={todayStr()}
+        onSelect={setViewDate}
+        onClose={() => setShowCalendar(false)}
+      />
+
+      {/* 날짜 달력 (식사 추가 모달용) */}
+      <CalendarPicker
+        visible={showLogDateCalendar}
+        value={logDate}
+        maxDate={todayStr()}
+        onSelect={setLogDate}
+        onClose={() => setShowLogDateCalendar(false)}
+      />
     </View>
   );
 }
@@ -504,6 +574,12 @@ const styles = StyleSheet.create({
   warningBanner: { backgroundColor: '#FFF3E0', borderRadius: 16, padding: 14, marginBottom: 12, borderLeftWidth: 4, borderLeftColor: '#FF9800' },
   warningText: { fontSize: 14, fontWeight: '700', color: '#E65100' },
   warningDesc: { fontSize: 12, color: '#78909C', marginTop: 3 },
+  datePickerBtn: {
+    borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12,
+    backgroundColor: '#FAFBFD',
+  },
+  datePickerBtnText: { fontSize: 15, color: '#2C3E50', fontWeight: '600' },
   dateNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, gap: 16 },
   dateArrow: { padding: 8 },
   dateArrowDisabled: { opacity: 0.3 },
@@ -520,6 +596,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text },
   headerSub: { fontSize: 13, color: '#78909C', marginTop: 2 },
   headerBtns: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  editBtn: { backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  editBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   deleteAllBtn: {
     backgroundColor: '#FFE5E5',
     borderRadius: 10,
@@ -546,8 +624,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   kcalBarBg: { height: 10, backgroundColor: '#E8EDF2', borderRadius: 5, overflow: 'hidden' },
-  kcalBarFill: { height: 10, backgroundColor: COLORS.primary, borderRadius: 5 },
-  kcalBarText: { fontSize: 12, color: '#78909C', marginTop: 6, textAlign: 'right' },
+  kcalBarFill: { height: 10, borderRadius: 5 },
+  kcalBarText: { fontSize: 12, color: '#78909C', marginTop: 6, textAlign: 'right', flexShrink: 1 },
   emptyWrap: { alignItems: 'center', paddingVertical: 60 },
   emptyEmoji: { fontSize: 56 },
   emptyText: { fontSize: 16, color: COLORS.text, fontWeight: '600', marginTop: 12 },
@@ -573,9 +651,19 @@ const styles = StyleSheet.create({
   delBtnText: { color: '#B0BEC5', fontSize: 16 },
   foodList: { marginTop: 10 },
   foodRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  foodName: { fontSize: 13, color: '#546E7A' },
+  foodName: { fontSize: 13, color: '#546E7A', flex: 1, flexShrink: 1 },
   foodKcal: { fontSize: 13, color: '#78909C' },
   mealTime: { fontSize: 11, color: '#B0BEC5', marginTop: 8, textAlign: 'right' },
+  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D0D8E4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  checkboxSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkmark: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  editActionBar: { flexDirection: 'row', padding: 12, gap: 8, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: '#E0E7EF' },
+  editCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E0E7EF', alignItems: 'center' },
+  editCancelText: { fontSize: 13, fontWeight: '600', color: '#78909C' },
+  editDeleteBtn: { flex: 2, paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.warning, alignItems: 'center' },
+  editDeleteText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  editDeleteAllBtn: { flex: 1.5, paddingVertical: 12, borderRadius: 12, backgroundColor: '#FF6B6B', alignItems: 'center' },
+  editDeleteAllText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalCard: {

@@ -14,6 +14,111 @@ export interface FoodCalorieResult {
   summary: string;
 }
 
+export interface BarcodeResult {
+  productName: string;
+  brand: string;
+  calories: number;
+  servingSize: string;
+  nutrients: { carb: number; protein: number; fat: number; sodium: number };
+  summary: string;
+}
+
+export async function scanBarcode(base64Image: string, mimeType = 'image/jpeg'): Promise<BarcodeResult> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType as any, data: base64Image } },
+        { type: 'text', text: `이 제품 이미지(바코드 포함)를 분석해서 제품 정보와 영양성분을 알려주세요.
+바코드 번호나 제품 포장의 텍스트를 최대한 활용해 정확하게 분석해주세요.
+반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{
+  "productName": "제품명",
+  "brand": "브랜드명",
+  "calories": 칼로리숫자,
+  "servingSize": "1회 제공량(예: 100g, 1개)",
+  "nutrients": {"carb": 탄수화물g, "protein": 단백질g, "fat": 지방g, "sodium": 나트륨mg},
+  "summary": "한줄요약"
+}` },
+      ],
+    }],
+  });
+  const text = (response.content[0] as any).text;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('AI 응답 파싱 실패');
+  return JSON.parse(match[0]);
+}
+
+export interface NutritionLabelResult {
+  productName: string;
+  servingSize: string;
+  calories: number;
+  nutrients: { carb: number; sugar: number; protein: number; fat: number; saturatedFat: number; sodium: number };
+  summary: string;
+}
+
+export async function scanNutritionLabel(base64Image: string, mimeType = 'image/jpeg'): Promise<NutritionLabelResult> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType as any, data: base64Image } },
+        { type: 'text', text: `이 영양성분표를 정확하게 파싱해주세요.
+반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{
+  "productName": "제품명(알 수 없으면 '제품')",
+  "servingSize": "1회 제공량",
+  "calories": 칼로리숫자,
+  "nutrients": {
+    "carb": 탄수화물g,
+    "sugar": 당류g,
+    "protein": 단백질g,
+    "fat": 지방g,
+    "saturatedFat": 포화지방g,
+    "sodium": 나트륨mg
+  },
+  "summary": "한줄요약"
+}` },
+      ],
+    }],
+  });
+  const text = (response.content[0] as any).text;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('AI 응답 파싱 실패');
+  return JSON.parse(match[0]);
+}
+
+export async function scanReceipt(base64Image: string, mimeType = 'image/jpeg'): Promise<FoodCalorieResult> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType as any, data: base64Image } },
+        { type: 'text', text: `이 영수증에서 음식/식음료 항목을 찾아 칼로리를 추정해주세요.
+음식이 아닌 항목(생필품 등)은 제외하고 먹을 수 있는 음식과 음료만 포함해주세요.
+반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{
+  "foods": [
+    {"name": "음식명", "kcal": 칼로리숫자, "amount": "수량"}
+  ],
+  "totalKcal": 총칼로리숫자,
+  "summary": "한줄요약"
+}` },
+      ],
+    }],
+  });
+  const text = (response.content[0] as any).text;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('AI 응답 파싱 실패');
+  return JSON.parse(match[0]);
+}
+
 export async function scanFoodImage(base64Image: string, mimeType: string = 'image/jpeg'): Promise<FoodCalorieResult> {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -79,7 +184,7 @@ export async function calculateCaloriesFromText(foodText: string): Promise<FoodC
   return JSON.parse(jsonMatch[0]);
 }
 
-const askClaude = async (prompt: string, maxTokens = 1500): Promise<string> => {
+export const askClaude = async (prompt: string, maxTokens = 1500): Promise<string> => {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: maxTokens,
@@ -87,6 +192,62 @@ const askClaude = async (prompt: string, maxTokens = 1500): Promise<string> => {
   });
   return (response.content[0] as any).text;
 };
+
+// ─── 건강 리포트 내보내기 ─────────────────────────────────────────────────────
+
+export async function generateHealthReport(data: {
+  nickname: string;
+  weeklyStats: any;
+  recentMeals: any[];
+  recentWorkouts: any[];
+  weightList: any[];
+  goalKcal: number;
+}): Promise<string> {
+  const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const mealDesc = data.recentMeals.slice(0, 5).map((m: any) =>
+    `${m.mealType || '식사'} ${m.totalKcal}kcal`).join(', ') || '기록 없음';
+  const workoutDesc = data.recentWorkouts.slice(0, 5).map((w: any) =>
+    `${w.exerciseName} ${w.kcalBurned}kcal`).join(', ') || '기록 없음';
+  const weightDesc = data.weightList.slice(0, 3).map((w: any) =>
+    `${w.logDate || ''} ${w.weightKg}kg`).join(', ') || '기록 없음';
+
+  const prompt = `다음 건강 데이터를 바탕으로 메모장이나 카카오톡에 공유하기 좋은 건강 리포트를 작성해주세요.
+
+사용자: ${data.nickname}
+날짜: ${today}
+목표 칼로리: ${data.goalKcal}kcal
+최근 식사: ${mealDesc}
+최근 운동: ${workoutDesc}
+체중 기록: ${weightDesc}
+
+아래 형식으로 이모지 포함해서 보기 좋게 작성해주세요. JSON 없이 순수 텍스트만:
+
+📊 CalorieApp 건강 리포트
+[날짜] | [사용자명]
+────────────────────
+[이번 주 한줄 평가]
+
+🍽️ 식단 요약
+[식단 분석 2~3줄]
+
+💪 운동 요약
+[운동 분석 1~2줄]
+
+⚖️ 체중 변화
+[체중 분석 1줄, 데이터 없으면 생략]
+
+💡 AI 맞춤 조언
+• [조언1]
+• [조언2]
+• [조언3]
+
+[응원 메시지]
+────────────────────
+CalorieApp으로 기록됨`;
+
+  return await askClaude(prompt, 2000);
+}
 
 // ─── 프리미엄 AI 기능 ─────────────────────────────────────────────────────────
 
