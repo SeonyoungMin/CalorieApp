@@ -5,8 +5,8 @@ import {
 } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
-  scanBarcode, scanNutritionLabel, scanFoodImage, scanReceipt,
-  BarcodeResult, NutritionLabelResult,
+  scanNutritionLabel, scanFoodImage, scanReceipt,
+  NutritionLabelResult,
 } from '../services/claudeService';
 import { saveMeal } from '../api/api';
 import { useSubscription } from '../hooks/useSubscription';
@@ -14,7 +14,7 @@ import PremiumModal from '../components/PremiumModal';
 import { COLORS } from '../theme';
 import { localDateStr } from '../utils/dateUtils';
 
-type ScanType = 'barcode' | 'nutrition' | 'food' | 'receipt';
+type ScanType = 'nutrition' | 'food' | 'receipt';
 
 interface EditableFood {
   name: string;
@@ -30,7 +30,6 @@ interface NutritionDetail {
 }
 
 const SCAN_ITEMS: { type: ScanType; emoji: string; title: string; desc: string; color: string }[] = [
-  { type: 'barcode',   emoji: '📦', title: '바코드 조회',     desc: '바코드 번호로 영양성분 정확 조회',   color: COLORS.primary   },
   { type: 'nutrition', emoji: '📋', title: '영양성분표 스캔', desc: '제품 뒷면으로 영양소 자동 파싱',     color: COLORS.secondary },
   { type: 'food',      emoji: '🍽️', title: '음식 사진 스캔', desc: 'AI가 음식 사진으로 칼로리 추정',     color: COLORS.warning   },
   { type: 'receipt',   emoji: '🧾', title: '영수증 스캔',     desc: '영수증으로 먹은 음식 자동 기록',     color: COLORS.purple    },
@@ -39,12 +38,11 @@ const SCAN_ITEMS: { type: ScanType; emoji: string; title: string; desc: string; 
 const MEAL_TYPES = ['아침', '점심', '저녁', '간식'];
 
 export default function ScanScreen() {
-  const { canScan, remainingFreeScans, isPremium, incrementScanCount, activatePremium, cancelPremium } = useSubscription();
+  const { canScan, remainingFreeScans, isPremium, incrementScanCount, purchasePremium, cancelPremium } = useSubscription();
   const [mode, setMode] = useState<'select' | 'result'>('select');
   const [currentType, setCurrentType] = useState<ScanType | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [barcodeInput, setBarcodeInput] = useState('');
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [editableFoods, setEditableFoods] = useState<EditableFood[]>([]);
   const [nutritionDetail, setNutritionDetail] = useState<NutritionDetail | null>(null);
@@ -55,21 +53,6 @@ export default function ScanScreen() {
 
   const applyFoodResult = (foods: { name: string; kcal: number; amount: string }[]) => {
     setEditableFoods(foods.map(f => ({ name: f.name, amount: f.amount || '', kcal: String(f.kcal) })));
-  };
-
-  const applyBarcodeResult = (res: BarcodeResult) => {
-    setNutritionDetail({
-      productName: res.productName,
-      servingSize: res.servingSize,
-      calories: res.calories,
-      nutrients: [
-        { label: '탄수화물', value: `${res.nutrients.carb}g` },
-        { label: '단백질',   value: `${res.nutrients.protein}g` },
-        { label: '지방',     value: `${res.nutrients.fat}g` },
-        { label: '나트륨',   value: `${res.nutrients.sodium}mg` },
-      ],
-    });
-    setEditableFoods([{ name: res.productName, amount: res.servingSize, kcal: String(res.calories) }]);
   };
 
   const applyNutritionResult = (res: NutritionLabelResult) => {
@@ -110,9 +93,7 @@ export default function ScanScreen() {
     setMode('result');
     setSelectedCard(null);
     try {
-      if (type === 'barcode') {
-        applyBarcodeResult(await scanBarcode(base64, normalizedMime));
-      } else if (type === 'nutrition') {
+      if (type === 'nutrition') {
         applyNutritionResult(await scanNutritionLabel(base64, normalizedMime));
       } else if (type === 'food') {
         const res = await scanFoodImage(base64, normalizedMime);
@@ -170,41 +151,6 @@ export default function ScanScreen() {
     setNutritionDetail(null);
     setLoading(false);
     setSelectedCard(null);
-    setBarcodeInput('');
-  };
-
-  const lookupBarcodeByNumber = async () => {
-    const code = barcodeInput.trim();
-    if (!code) { Alert.alert('입력 오류', '바코드 번호를 입력해주세요.'); return; }
-    if (!canScan) { setPremiumVisible(true); return; }
-    setCurrentType('barcode');
-    setMode('result');
-    setLoading(true);
-    setNutritionDetail(null);
-    setEditableFoods([]);
-    try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`);
-      const data = await res.json();
-      if (data.status === 0 || !data.product) {
-        throw new Error('제품을 찾을 수 없습니다.\n바코드 번호를 다시 확인해주세요.');
-      }
-      const p = data.product;
-      const name = p.product_name_ko || p.product_name || p.brands || '알 수 없는 제품';
-      const servingSize = p.serving_size || '100g';
-      const n = p.nutriments || {};
-      const kcal = Math.round(n['energy-kcal_serving'] ?? n['energy-kcal_100g'] ?? 0);
-      const carb = Math.round(n.carbohydrates_serving ?? n.carbohydrates_100g ?? 0);
-      const protein = Math.round(n.proteins_serving ?? n.proteins_100g ?? 0);
-      const fat = Math.round(n.fat_serving ?? n.fat_100g ?? 0);
-      const sodium = Math.round((n.sodium_serving ?? n.sodium_100g ?? 0) * 1000);
-      applyBarcodeResult({ productName: name, brand: p.brands || '', calories: kcal, servingSize, nutrients: { carb, protein, fat, sodium }, summary: `${name} ${kcal}kcal` });
-      await incrementScanCount();
-    } catch (err: any) {
-      Alert.alert('조회 실패', err.message || '제품 정보를 가져오지 못했습니다.');
-      reset();
-    } finally {
-      setLoading(false);
-    }
   };
 
   const updateFood = (idx: number, field: keyof EditableFood, value: string) => {
@@ -287,28 +233,7 @@ export default function ScanScreen() {
                   <Text style={styles.cardDesc} numberOfLines={2}>{item.desc}</Text>
                 </TouchableOpacity>
 
-                {/* 바코드: 번호 입력 / 나머지: 카메라·갤러리 */}
-                {selectedCard === item.type && item.type === 'barcode' && (
-                  <View style={[styles.pickPanel, { borderColor: item.color, flexDirection: 'column', gap: 8 }]}>
-                    <TextInput
-                      style={styles.barcodeNumberInput}
-                      placeholder="바코드 번호 입력 (예: 8801234567890)"
-                      placeholderTextColor="#B0BEC5"
-                      keyboardType="numeric"
-                      value={barcodeInput}
-                      onChangeText={setBarcodeInput}
-                      onSubmitEditing={lookupBarcodeByNumber}
-                      returnKeyType="search"
-                    />
-                    <TouchableOpacity
-                      style={[styles.pickBtn, { backgroundColor: item.color }]}
-                      onPress={lookupBarcodeByNumber}
-                    >
-                      <Text style={styles.pickBtnText}>🔍 영양성분 조회</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {selectedCard === item.type && item.type !== 'barcode' && (
+                {selectedCard === item.type && (
                   <View style={[styles.pickPanel, { borderColor: item.color }]}>
                     <TouchableOpacity
                       style={[styles.pickBtn, { backgroundColor: item.color }]}
@@ -453,7 +378,7 @@ export default function ScanScreen() {
       <PremiumModal
         visible={premiumVisible}
         onClose={() => setPremiumVisible(false)}
-        onActivate={async () => { await activatePremium(); setPremiumVisible(false); }}
+        onActivate={async () => { await purchasePremium(); setPremiumVisible(false); }}
         onCancel={async () => { await cancelPremium(); setPremiumVisible(false); }}
         isPremium={isPremium}
       />

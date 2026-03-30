@@ -35,7 +35,7 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [editableFoods, setEditableFoods] = useState<EditableFood[]>([]);
-  const { canScan, remainingFreeScans, isPremium, incrementScanCount, activatePremium, cancelPremium } = useSubscription();
+  const { canScan, remainingFreeScans, isPremium, incrementScanCount, purchasePremium, cancelPremium } = useSubscription();
 
   // 모달이 열릴 때마다 오늘 날짜로 리셋 (앱이 오래 떠있어도 날짜 오류 방지)
   useEffect(() => {
@@ -362,7 +362,7 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
       visible={premiumVisible}
       onClose={() => setPremiumVisible(false)}
       isPremium={isPremium}
-      onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+      onSubscribe={async () => { await purchasePremium(); setPremiumVisible(false); }}
       onCancel={async () => { await cancelPremium(); setPremiumVisible(false); }}
     />
     </>

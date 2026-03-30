@@ -20,6 +20,7 @@ interface WeightRecord {
   weightId: number;
   weightKg: number;
   logDate: string;
+  recordedAt: string;
 }
 
 const TABS = [
@@ -32,7 +33,7 @@ const DAYS_KR = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function StatsScreen() {
   const { goalKcal: GOAL_KCAL, userWeightKg } = useAuth();
-  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const { isPremium, purchasePremium, cancelPremium } = useSubscription();
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('nutrients');
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ export default function StatsScreen() {
         const [wRes, wgRes] = await Promise.all([getWeeklyStats(), getWeightList()]);
         setWeeklyData(wRes.data || []);
         const sorted = (wgRes.data || []).sort(
-          (a: WeightRecord, b: WeightRecord) => new Date(a.logDate).getTime() - new Date(b.logDate).getTime()
+          (a: WeightRecord, b: WeightRecord) => new Date(a.recordedAt || a.logDate).getTime() - new Date(b.recordedAt || b.logDate).getTime()
         );
         setWeightList(sorted);
       } catch (_) {}
@@ -79,7 +80,7 @@ export default function StatsScreen() {
           visible={premiumVisible}
           onClose={() => setPremiumVisible(false)}
           isPremium={false}
-          onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+          onSubscribe={async () => { await purchasePremium(); setPremiumVisible(false); }}
         />
       </View>
     );
@@ -97,8 +98,8 @@ export default function StatsScreen() {
 
   // 체중 그래프
   const weightGoal = userWeightKg ? Math.max(userWeightKg - 5, 40) : null; // 현재체중 -5kg 목표 (설정 전)
-  const maxW = weightList.length > 0 ? Math.max(...weightList.map((w) => w.weightKg)) + 2 : 80;
-  const minW = weightList.length > 0 ? Math.min(...weightList.map((w) => w.weightKg)) - 2 : 50;
+  const maxW = weightList.length > 0 ? Math.max(...weightList.map((w) => Number(w.weightKg) || 0)) + 2 : 80;
+  const minW = weightList.length > 0 ? Math.min(...weightList.map((w) => Number(w.weightKg) || 0)) - 2 : 50;
 
   return (
     <View style={styles.container}>
@@ -127,9 +128,9 @@ export default function StatsScreen() {
               <Text style={styles.cardTitle}>이번 주 평균 섭취</Text>
               <Text style={styles.bigNum}>{avgKcal} <Text style={styles.bigNumUnit}>kcal/일</Text></Text>
               <View style={styles.progressWrap}>
-                <View style={[styles.progressBar, { width: `${Math.min((avgKcal / GOAL_KCAL) * 100, 100)}%`, backgroundColor: avgKcal > GOAL_KCAL ? COLORS.primary : COLORS.green }]} />
+                <View style={[styles.progressBar, { width: `${GOAL_KCAL > 0 ? Math.min((avgKcal / GOAL_KCAL) * 100, 100) : 0}%`, backgroundColor: avgKcal > GOAL_KCAL ? COLORS.primary : COLORS.green }]} />
               </View>
-              <Text style={{ fontSize: 12, color: '#78909C', marginTop: 4 }}>목표 {GOAL_KCAL}kcal 대비 {Math.round((avgKcal / GOAL_KCAL) * 100)}%</Text>
+              <Text style={{ fontSize: 12, color: '#78909C', marginTop: 4 }}>목표 {GOAL_KCAL}kcal 대비 {GOAL_KCAL > 0 ? Math.round((avgKcal / GOAL_KCAL) * 100) : 0}%</Text>
             </View>
 
             {/* 영양소 도넛 시뮬레이션 */}
@@ -167,7 +168,7 @@ export default function StatsScreen() {
               <Text style={styles.cardTitle}>요일별 섭취 칼로리</Text>
               <View style={styles.barChartWrap}>
                 {weeklyData.length > 0 ? weeklyData.map((d, i) => {
-                  const h = Math.max((d.foodKcal / GOAL_KCAL) * 100, 4);
+                  const h = Math.max(GOAL_KCAL > 0 ? (d.foodKcal / GOAL_KCAL) * 100 : 4, 4);
                   const day = DAYS_KR[new Date(d.date + 'T12:00:00').getDay()];
                   return (
                     <View key={i} style={styles.barCol}>
@@ -253,9 +254,9 @@ export default function StatsScreen() {
               <>
                 <View style={styles.card}>
                   <View style={styles.row}>
-                    <InfoChip label="현재" value={`${weightList[weightList.length - 1]?.weightKg}kg`} color={COLORS.primary} />
-                    <InfoChip label="최저" value={`${Math.min(...weightList.map((w) => w.weightKg))}kg`} color={COLORS.green} />
-                    <InfoChip label="변화" value={`${(weightList[weightList.length - 1]?.weightKg - weightList[0]?.weightKg).toFixed(1)}kg`} color={COLORS.secondary} />
+                    <InfoChip label="현재" value={`${Number(weightList[weightList.length - 1]?.weightKg) || '-'}kg`} color={COLORS.primary} />
+                    <InfoChip label="최저" value={`${Math.min(...weightList.map((w) => Number(w.weightKg) || 0))}kg`} color={COLORS.green} />
+                    <InfoChip label="변화" value={`${((Number(weightList[weightList.length - 1]?.weightKg) || 0) - (Number(weightList[0]?.weightKg) || 0)).toFixed(1)}kg`} color={COLORS.secondary} />
                   </View>
                 </View>
 
@@ -321,7 +322,7 @@ function CalendarGrid({ year, month, data, goalKcal }: { year: number; month: nu
 
 function WeightChart({ data, min, max, goal }: { data: WeightRecord[]; min: number; max: number; goal: number | null }) {
   const h = 120;
-  const range = max - min;
+  const range = max - min || 1;
   return (
     <View style={{ marginTop: 8 }}>
       <View style={{ height: h, position: 'relative' }}>
@@ -336,7 +337,8 @@ function WeightChart({ data, min, max, goal }: { data: WeightRecord[]; min: numb
         {/* 포인트들 */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: h, gap: 8 }}>
           {data.map((w, i) => {
-            const barH = Math.max(((w.weightKg - min) / range) * h, 4);
+            const kg = Number(w.weightKg) || 0;
+            const barH = Math.max(((kg - min) / range) * h, 4);
             return (
               <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: h }}>
                 <View style={{ width: '80%', height: barH, backgroundColor: COLORS.secondary, borderRadius: 4 }} />
@@ -346,12 +348,17 @@ function WeightChart({ data, min, max, goal }: { data: WeightRecord[]; min: numb
         </View>
       </View>
       <View style={{ flexDirection: 'row', marginTop: 4 }}>
-        {data.map((w, i) => (
-          <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 9, color: '#B0BEC5' }}>{new Date(w.logDate + 'T12:00:00').getDate()}일</Text>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.text }}>{w.weightKg}</Text>
-          </View>
-        ))}
+        {data.map((w, i) => {
+          const dateVal = w.recordedAt || w.logDate;
+          const d = dateVal ? new Date(String(dateVal)) : null;
+          const dayNum = d && !isNaN(d.getTime()) ? d.getDate() : '';
+          return (
+            <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={{ fontSize: 9, color: '#B0BEC5' }}>{dayNum}일</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.text }}>{Number(w.weightKg) || w.weightKg}</Text>
+            </View>
+          );
+        })}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 4 }}>
         <View style={{ width: 20, borderWidth: 1, borderColor: COLORS.green, borderStyle: 'dashed' }} />

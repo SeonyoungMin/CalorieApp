@@ -6,12 +6,12 @@ const isWeb = Platform.OS === 'web';
 
 // 웹: 프록시를 통해 같은 origin으로 요청 (CORS 우회)
 // 네이티브: 직접 서버 주소로 요청
-const BASE_URL = isWeb ? '' : 'http://54.206.26.66:8081';
+const BASE_URL = isWeb ? '' : 'http://54.252.162.73:8081';
 
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
-  withCredentials: isWeb, // 웹: 브라우저 쿠키 자동 처리
+  withCredentials: isWeb,
 });
 
 // Request interceptor: attach session cookie (네이티브 전용)
@@ -29,27 +29,21 @@ api.interceptors.request.use(
 );
 
 // Response interceptor: JSESSIONID 캡처 (네이티브 전용)
-// React Native OkHttp가 302를 자동으로 따라가므로 Set-Cookie 대신
-// Spring Boot가 URL에 포함시키는 jsessionid를 responseURL에서 추출
 api.interceptors.response.use(
   async (response) => {
     if (!isWeb) {
-      // 방법1: Set-Cookie 헤더 (직접 응답인 경우)
-      const setCookie = response.headers['set-cookie'];
+      // 방법1: Set-Cookie 헤더
+      const setCookie = response.headers?.['set-cookie'];
       if (setCookie) {
         const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
         const match = cookieStr.match(/JSESSIONID=([^;]+)/);
-        if (match) {
-          await AsyncStorage.setItem('JSESSIONID', match[1]);
-        }
+        if (match) await AsyncStorage.setItem('JSESSIONID', match[1]);
       }
-      // 방법2: 리다이렉트 후 최종 URL에서 jsessionid 추출
+      // 방법2: 리다이렉트 후 URL에서 jsessionid 추출
       const responseURL: string = (response.request as any)?.responseURL || '';
       if (responseURL) {
         const urlMatch = responseURL.match(/jsessionid=([^;?/\s]+)/i);
-        if (urlMatch) {
-          await AsyncStorage.setItem('JSESSIONID', urlMatch[1]);
-        }
+        if (urlMatch) await AsyncStorage.setItem('JSESSIONID', urlMatch[1]);
       }
     }
     return response;
@@ -64,7 +58,6 @@ export const loginApi = (email: string, password: string) => {
   params.append('password', password);
   return api.post('/login', params.toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    // 302 리다이렉트를 직접 받아서 Set-Cookie(JSESSIONID) 캡처
     maxRedirects: 0,
     validateStatus: (status) => status >= 200 && status < 400,
   });

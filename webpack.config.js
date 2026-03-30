@@ -10,15 +10,23 @@ module.exports = {
     filename: 'bundle.js',
   },
   devServer: {
-    port: 8082,
+    port: 8086,
     hot: true,
     open: true,
     proxy: [
       {
         context: ['/api', '/login', '/register', '/logout'],
-        target: 'http://54.206.26.66:8081',
+        target: 'http://54.252.162.73:8081',
         changeOrigin: true,
+        autoRewrite: true,
         cookieDomainRewrite: 'localhost',
+      },
+      {
+        context: ['/kfda'],
+        target: 'https://apis.data.go.kr',
+        changeOrigin: true,
+        secure: true,
+        pathRewrite: { '^/kfda': '' },
       },
     ],
   },
@@ -29,6 +37,7 @@ module.exports = {
       'react-native$': 'react-native-web',
       'react-native-svg': 'react-native-svg/src/ReactNativeSVG.web',
       'react-native-image-picker': path.resolve(__dirname, 'src/mocks/react-native-image-picker.js'),
+      '@notifee/react-native': path.resolve(__dirname, 'src/mocks/notifee.js'),
     },
   },
   module: {

@@ -11,7 +11,7 @@ import { getTodayMeals, getTodayWorkouts, getWeightList, getWeeklyStats } from '
 import { generateHealthReport } from '../services/claudeService';
 
 export default function BackupScreen({ navigation }: any) {
-  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const { isPremium, purchasePremium, cancelPremium } = useSubscription();
   const { nickname, goalKcal } = useAuth();
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -57,7 +57,7 @@ export default function BackupScreen({ navigation }: any) {
           visible={premiumVisible}
           onClose={() => setPremiumVisible(false)}
           isPremium={isPremium}
-          onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+          onSubscribe={async () => { await purchasePremium(); setPremiumVisible(false); }}
           onCancel={async () => { await cancelPremium(); setPremiumVisible(false); }}
         />
       </View>
@@ -93,7 +93,7 @@ export default function BackupScreen({ navigation }: any) {
         <Text style={styles.infoTitle}>백업 정보</Text>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>계정</Text>
-          <Text style={styles.infoValue}>{nickname}</Text>
+          <Text style={styles.infoValue}>{nickname || '-'}</Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>동기화 방식</Text>

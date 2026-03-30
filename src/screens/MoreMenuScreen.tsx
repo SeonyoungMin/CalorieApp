@@ -9,33 +9,23 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import PremiumModal from '../components/PremiumModal';
 import { useSubscription } from '../hooks/useSubscription';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  purple: '#9C88FF',
-  pink: '#FF8FAB',
-  water: '#4FC3F7',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
 
 const MENU_ITEMS = [
   { emoji: '🤖', label: 'AI 인사이트', desc: '식단분석 · 식단추천 · 운동추천 · 주간리포트', screen: 'AiInsight', color: COLORS.primary, premium: true },
   { emoji: '📊', label: '상세 통계', desc: '영양소 · 캘린더 · 체중 그래프', screen: 'Stats', color: COLORS.secondary, premium: true },
+  { emoji: '⚖️', label: '체중 기록', desc: '체중 변화 기록 및 그래프', screen: 'Weight', color: COLORS.purple, premium: false },
   { emoji: '💧', label: '물 섭취', desc: '오늘 마신 물 기록', screen: 'Water', color: COLORS.water, premium: false },
   { emoji: '🌸', label: '생리주기', desc: '주기 관리 및 예측', screen: 'Cycle', color: COLORS.pink, premium: false },
   { emoji: '👤', label: '내 프로필', desc: '목표 칼로리 · 키 · 체중 설정', screen: 'Profile', color: COLORS.purple, premium: false },
+  { emoji: '🔔', label: '알림 설정', desc: '생리주기 · 물 마시기 · 식사 알림', screen: 'NotificationSettings', color: COLORS.warning, premium: false },
   { emoji: '☁️', label: '클라우드 백업', desc: '내 데이터 내보내기 · 자동 동기화', screen: 'Backup', color: COLORS.success, premium: true },
 ];
 
 export default function MoreMenuScreen() {
   const navigation = useNavigation<any>();
   const [premiumVisible, setPremiumVisible] = useState(false);
-  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const { isPremium, purchasePremium, cancelPremium } = useSubscription();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -64,7 +54,7 @@ export default function MoreMenuScreen() {
         visible={premiumVisible}
         onClose={() => setPremiumVisible(false)}
         isPremium={isPremium}
-        onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+        onSubscribe={async () => { await purchasePremium(); setPremiumVisible(false); }}
         onCancel={async () => { await cancelPremium(); setPremiumVisible(false); }}
       />
 
@@ -125,9 +115,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   emoji: { fontSize: 26 },
-  menuText: { flex: 1 },
+  menuText: { flex: 1, flexShrink: 1 },
   menuLabel: { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  menuDesc: { fontSize: 12, color: '#78909C', marginTop: 2 },
+  menuDesc: { fontSize: 12, color: '#78909C', marginTop: 2, flexShrink: 1 },
   arrow: { fontSize: 24, color: '#B0BEC5', fontWeight: '300' },
   lockBadge: { fontSize: 18 },
   premiumBanner: {
@@ -137,7 +127,7 @@ const styles = StyleSheet.create({
   },
   premiumBannerActive: { backgroundColor: '#FFF3E0', borderColor: '#FF6B6B' },
   premiumEmoji: { fontSize: 30 },
-  premiumTitle: { fontSize: 15, fontWeight: '800', color: '#2C3E50' },
-  premiumDesc: { fontSize: 12, color: '#78909C', marginTop: 2 },
+  premiumTitle: { fontSize: 15, fontWeight: '800', color: '#2C3E50', flexShrink: 1 },
+  premiumDesc: { fontSize: 12, color: '#78909C', marginTop: 2, flexShrink: 1 },
   premiumArrow: { fontSize: 18, color: '#FF6B6B', fontWeight: '700' },
 });

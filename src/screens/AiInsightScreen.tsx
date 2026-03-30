@@ -22,7 +22,7 @@ const TABS = [
 
 export default function AiInsightScreen() {
   const { goalKcal: GOAL_KCAL, userWeightKg, userHeightCm } = useAuth();
-  const { isPremium, activatePremium, cancelPremium } = useSubscription();
+  const { isPremium, purchasePremium, cancelPremium } = useSubscription();
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [tab, setTab] = useState('diet');
   const [loading, setLoading] = useState(false);
@@ -82,7 +82,7 @@ export default function AiInsightScreen() {
           visible={premiumVisible}
           onClose={() => setPremiumVisible(false)}
           isPremium={false}
-          onSubscribe={async () => { await activatePremium(); setPremiumVisible(false); }}
+          onSubscribe={async () => { await purchasePremium(); setPremiumVisible(false); }}
         />
       </View>
     );
