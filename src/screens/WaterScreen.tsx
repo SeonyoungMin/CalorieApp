@@ -13,16 +13,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getTodayWater, updateWater } from '../api/api';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  water: '#4FC3F7',
-  waterDark: '#0288D1',
-  secondary: '#4ECDC4',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
 
 const GOAL_ML = 2000;
 const CUP_ML = 250;
@@ -76,7 +67,7 @@ export default function WaterScreen({ navigation }: any) {
       const res = await getTodayWater();
       setTotalMl(res.data?.totalMl || 0);
     } catch {
-      //
+      Alert.alert('오류', '물 섭취 정보를 불러오지 못했습니다.');
     }
   }, []);
 
@@ -169,12 +160,8 @@ export default function WaterScreen({ navigation }: any) {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.water} />}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>💧 물 섭취</Text>
+        {/* 초기화 버튼 */}
+        <View style={[styles.header, { justifyContent: 'flex-end' }]}>
           <TouchableOpacity onPress={resetWater}>
             <Text style={styles.resetText}>초기화</Text>
           </TouchableOpacity>

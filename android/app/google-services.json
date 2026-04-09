@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "523640938461",
+    "project_id": "calorieapp-a9921",
+    "storage_bucket": "calorieapp-a9921.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:523640938461:android:7630819adcf1c9d7036034",
+        "android_client_info": {
+          "package_name": "com.calorieapp.kals"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDf_yXYNAFGDK4CVDzeKaYJ1hK-8LJW-Yw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

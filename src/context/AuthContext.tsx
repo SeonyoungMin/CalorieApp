@@ -2,8 +2,14 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { loginApi, logoutApi, registerApi, getUserProfile } from '../api/api';
+import {
+  signInWithKakao,
+  signInWithGoogle,
+  signOutSocial,
+  isSocialUser,
+  SOCIAL_TYPE_KEY,
+} from '../services/socialAuthService';
 
-const MOCK_MODE = false;
 const isWeb = Platform.OS === 'web';
 
 interface AuthContextType {
@@ -14,6 +20,8 @@ interface AuthContextType {
   userHeightCm: number | null;
   nickname: string;
   login: (email: string, password: string) => Promise<void>;
+  loginWithKakao: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string, nickname: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -73,7 +81,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch (_) {}
 
-      // 저장된 자격증명으로 자동로그인 시도
+      // 소셜 유저: JSESSIONID 만료 시 재로그인 필요 (자동 불가) → 로그인 화면으로
+      const social = await isSocialUser();
+      if (social) {
+        // 세션이 살아있으면 이미 위에서 처리됨. 여기까지 오면 만료
+        setIsLoading(false);
+        return;
+      }
+
+      // 일반 유저: 저장된 자격증명으로 자동로그인 시도
       try {
         const autoEmail = await AsyncStorage.getItem('AUTO_EMAIL');
         const autoPwd = await AsyncStorage.getItem('AUTO_PWD');
@@ -94,25 +110,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    if (MOCK_MODE) {
-      await AsyncStorage.setItem('JSESSIONID', 'mock-session');
-      setIsLoggedIn(true);
-      return;
+    let loginRes: any;
+    try {
+      loginRes = await loginApi(email, password);
+    } catch (e: any) {
+      throw e;
     }
-    const response = await loginApi(email, password);
-    if (response.status === 200) {
-      // 자동로그인용 자격증명 저장
-      await AsyncStorage.setItem('AUTO_EMAIL', email);
-      await AsyncStorage.setItem('AUTO_PWD', password);
-      setIsLoggedIn(true);
-      await fetchProfile();
-    } else {
-      throw new Error('로그인 실패');
+    const responseURL: string = (loginRes.request as any)?.responseURL || '';
+    // responseURL에 error 또는 /login 경로가 있으면 인증 실패
+    if (responseURL.includes('error') || responseURL.match(/\/login[;?]/)) {
+      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
+    let res;
+    try {
+      res = await getUserProfile();
+    } catch (e: any) {
+      throw new Error('로그인에 실패했습니다. 이메일/비밀번호를 확인해주세요.');
+    }
+    await AsyncStorage.setItem('AUTO_EMAIL', email);
+    await AsyncStorage.setItem('AUTO_PWD', password);
+    setGoalKcal(res.data.goalKcal || 2000);
+    setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
+    setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
+    setNickname(res.data.nickname || '');
+    setIsLoggedIn(true);
+  };
+
+  // ── 카카오 로그인 ────────────────────────────────────────────────────────
+  const loginWithKakao = async () => {
+    await signInWithKakao();                 // SDK → 백엔드 → JSESSIONID 저장
+    const res = await getUserProfile();
+    setGoalKcal(res.data.goalKcal || 2000);
+    setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
+    setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
+    setNickname(res.data.nickname || '');
+    setIsLoggedIn(true);
+  };
+
+  // ── 구글 로그인 ─────────────────────────────────────────────────────────
+  const loginWithGoogle = async () => {
+    await signInWithGoogle();
+    const res = await getUserProfile();
+    setGoalKcal(res.data.goalKcal || 2000);
+    setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
+    setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
+    setNickname(res.data.nickname || '');
+    setIsLoggedIn(true);
   };
 
   const register = async (email: string, password: string, nickname: string) => {
-    if (MOCK_MODE) return;
     const response = await registerApi(email, password, nickname);
     if (response.status !== 200) {
       throw new Error('회원가입 실패');
@@ -120,17 +166,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
-    if (MOCK_MODE) {
-      await AsyncStorage.removeItem('JSESSIONID');
-      setIsLoggedIn(false);
-      return;
-    }
     try {
       await logoutApi();
     } catch (_) {}
+    // 소셜 SDK 로그아웃 (구글)
+    await signOutSocial();
     await AsyncStorage.removeItem('JSESSIONID');
     await AsyncStorage.removeItem('AUTO_EMAIL');
     await AsyncStorage.removeItem('AUTO_PWD');
+    // 웹: 브라우저 쿠키 직접 만료 처리 (Spring Security GET logout이 세션을 종료 못할 경우 대비)
+    if (isWeb) {
+      document.cookie = 'JSESSIONID=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    }
     setIsLoggedIn(false);
     setGoalKcal(2000);
     setUserWeightKg(null);
@@ -141,7 +188,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshProfile = fetchProfile;
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, isLoading, goalKcal, userWeightKg, userHeightCm, nickname, login, register, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ isLoggedIn, isLoading, goalKcal, userWeightKg, userHeightCm, nickname, login, loginWithKakao, loginWithGoogle, register, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

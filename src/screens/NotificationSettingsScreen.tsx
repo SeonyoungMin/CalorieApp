@@ -19,6 +19,21 @@ import {
   scheduleMealNotifications,
   requestNotificationPermission,
 } from '../services/notificationService';
+import {
+  NotifPrefs,
+  loadNotifPrefs,
+  saveNotifPrefs,
+  setChannelEnabled,
+} from '../services/notificationPreferencesService';
+import {
+  scheduleMealPhotoAlarms,
+  loadMealPhotoAlarms,
+} from '../services/mealPhotoNotificationService';
+import {
+  scheduleMedicationAlarms,
+  loadMedicationAlarms,
+} from '../services/medicationNotificationService';
+import { cancelDrinkNotificationsForDate } from '../services/drinkNotificationService';
 import { COLORS } from '../theme';
 
 function pad(n: number) {
@@ -77,10 +92,14 @@ function TimePickerRow({
 export default function NotificationSettingsScreen() {
   const navigation = useNavigation();
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
+  const [prefs, setPrefs] = useState<NotifPrefs>({
+    meal_photo: true, medication: true, drink: true, warning: true,
+  });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    loadNotifPrefs().then(setPrefs);
   }, []);
 
   function update(partial: Partial<NotificationSettings>) {
@@ -99,10 +118,40 @@ export default function NotificationSettingsScreen() {
         }
       }
       await saveSettings(settings);
+      await saveNotifPrefs(prefs);
+
       if (Platform.OS !== 'web') {
         await scheduleWaterNotifications(settings);
         await scheduleMealNotifications(settings);
+
+        // 식사 사진 알림: OFF가 되면 기존 알림 취소, ON이 되면 재예약
+        if (!prefs.meal_photo) {
+          const { cancelMealPhotoAlarms } = await import('../services/mealPhotoNotificationService');
+          await cancelMealPhotoAlarms();
+        } else {
+          const alarms = await loadMealPhotoAlarms();
+          // askChannelPermission을 우회해서 바로 스케줄 (설정 화면에서 명시적으로 켠 것)
+          await setChannelEnabled('meal_photo', true);
+          await scheduleMealPhotoAlarms(alarms);
+        }
+
+        // 약 복용 알림: OFF면 취소
+        if (!prefs.medication) {
+          const { cancelMealPhotoAlarms: _ } = await import('../services/mealPhotoNotificationService');
+          const notifee = (await import('@notifee/react-native')).default;
+          const existing = await notifee.getTriggerNotifications();
+          for (const n of existing) {
+            if ((n.notification.android?.channelId ?? '') === 'medication') {
+              await notifee.cancelNotification(n.notification.id!);
+            }
+          }
+        } else {
+          const alarms = await loadMedicationAlarms();
+          await setChannelEnabled('medication', true);
+          await scheduleMedicationAlarms(alarms);
+        }
       }
+
       Alert.alert('저장 완료', '알림 설정이 저장되었습니다.');
       navigation.goBack();
     } catch (e) {
@@ -112,16 +161,12 @@ export default function NotificationSettingsScreen() {
     }
   }
 
+  function updatePref<K extends keyof NotifPrefs>(key: K, val: boolean) {
+    setPrefs(prev => ({ ...prev, [key]: val }));
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>알림 설정</Text>
-        <View style={{ width: 36 }} />
-      </View>
 
       {/* 생리주기 알림 */}
       <View style={styles.section}>
@@ -242,6 +287,90 @@ export default function NotificationSettingsScreen() {
             />
           </>
         )}
+      </View>
+
+      {/* ─── 식사 사진 알림 ─────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEmoji}>📷</Text>
+          <Text style={styles.sectionTitle}>식사 사진 알림</Text>
+        </View>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>알림 사용</Text>
+            <Text style={styles.rowDesc}>식사 시간마다 사진 촬영 알림</Text>
+          </View>
+          <Switch
+            value={prefs.meal_photo}
+            onValueChange={v => updatePref('meal_photo', v)}
+            trackColor={{ false: '#CFD8DC', true: COLORS.primary + '99' }}
+            thumbColor={prefs.meal_photo ? COLORS.primary : '#ECEFF1'}
+          />
+        </View>
+        <Text style={styles.hint}>세부 시간 설정은 더보기 → 식사 사진 알림에서 변경하세요.</Text>
+      </View>
+
+      {/* ─── 약 복용 알림 ───────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEmoji}>💊</Text>
+          <Text style={styles.sectionTitle}>약 복용 알림</Text>
+        </View>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>알림 사용 (프리미엄)</Text>
+            <Text style={styles.rowDesc}>설정한 시간에 복용 알림</Text>
+          </View>
+          <Switch
+            value={prefs.medication}
+            onValueChange={v => updatePref('medication', v)}
+            trackColor={{ false: '#CFD8DC', true: COLORS.purple + '99' }}
+            thumbColor={prefs.medication ? COLORS.purple : '#ECEFF1'}
+          />
+        </View>
+        <Text style={styles.hint}>세부 약 목록은 더보기 → 약 복용 알림에서 관리하세요.</Text>
+      </View>
+
+      {/* ─── 술자리 알림 ────────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEmoji}>🍺</Text>
+          <Text style={styles.sectionTitle}>술자리 알림</Text>
+        </View>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>알림 사용</Text>
+            <Text style={styles.rowDesc}>회식 전날 절약 알림 · 다음날 해장 추천</Text>
+          </View>
+          <Switch
+            value={prefs.drink}
+            onValueChange={v => updatePref('drink', v)}
+            trackColor={{ false: '#CFD8DC', true: '#FF980099' }}
+            thumbColor={prefs.drink ? '#FF9800' : '#ECEFF1'}
+          />
+        </View>
+        <Text style={styles.hint}>회식을 알리고 싶지 않다면 여기서 끄세요.</Text>
+      </View>
+
+      {/* ─── 칼로리 경고 알림 ───────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEmoji}>⚠️</Text>
+          <Text style={styles.sectionTitle}>칼로리 경고 알림</Text>
+        </View>
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>알림 사용</Text>
+            <Text style={styles.rowDesc}>저열량 경고 · 목표 초과 경고 · 매일 동기부여</Text>
+          </View>
+          <Switch
+            value={prefs.warning}
+            onValueChange={v => updatePref('warning', v)}
+            trackColor={{ false: '#CFD8DC', true: COLORS.warning + '99' }}
+            thumbColor={prefs.warning ? COLORS.warning : '#ECEFF1'}
+          />
+        </View>
+        <Text style={styles.hint}>오후 2시 · 3시 · 목표 초과 시 즉시 발송됩니다.</Text>
       </View>
 
       {/* 저장 버튼 */}

@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../theme';
 
@@ -21,12 +22,18 @@ import StatsScreen from '../screens/StatsScreen';
 import BackupScreen from '../screens/BackupScreen';
 import ScanScreen from '../screens/ScanScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import IfCalcScreen from '../screens/IfCalcScreen';
+import MealPhotoNotificationScreen from '../screens/MealPhotoNotificationScreen';
+import MedicationScreen from '../screens/MedicationScreen';
+import DrinkModeScreen from '../screens/DrinkModeScreen';
+import CheatDayScreen from '../screens/CheatDayScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 
 function MainTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -39,8 +46,8 @@ function MainTabs() {
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.08,
           shadowRadius: 8,
-          height: 62,
-          paddingBottom: 8,
+          height: 62 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
         },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.inactive,
@@ -94,16 +101,32 @@ function MainTabs() {
 const MoreStackNav = createNativeStackNavigator();
 function MoreStack() {
   return (
-    <MoreStackNav.Navigator screenOptions={{ headerShown: false }}>
-      <MoreStackNav.Screen name="MoreMenu" component={MoreMenuScreen} />
-      <MoreStackNav.Screen name="Water" component={WaterScreen} />
-      <MoreStackNav.Screen name="Cycle" component={CycleScreen} />
-      <MoreStackNav.Screen name="Profile" component={ProfileScreen} />
-      <MoreStackNav.Screen name="AiInsight" component={AiInsightScreen} />
-      <MoreStackNav.Screen name="Stats" component={StatsScreen} />
-      <MoreStackNav.Screen name="Backup" component={BackupScreen} />
-      <MoreStackNav.Screen name="Weight" component={WeightScreen} />
-      <MoreStackNav.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+    <MoreStackNav.Navigator
+      screenOptions={{
+        headerShown: true,
+        headerBackTitle: '',
+        headerBackButtonMenuEnabled: false,
+        headerStyle: { backgroundColor: '#F0F4F8' },
+        headerShadowVisible: false,
+        headerTintColor: COLORS.primary,
+        headerTitleStyle: { fontWeight: '700', fontSize: 17, color: '#2C3E50' },
+        headerTitleAlign: 'center',
+      }}
+    >
+      <MoreStackNav.Screen name="MoreMenu" component={MoreMenuScreen} options={{ headerShown: false }} />
+      <MoreStackNav.Screen name="Water" component={WaterScreen} options={{ title: '💧 물 섭취' }} />
+      <MoreStackNav.Screen name="Cycle" component={CycleScreen} options={{ title: '🌸 생리주기' }} />
+      <MoreStackNav.Screen name="Profile" component={ProfileScreen} options={{ title: '👤 내 정보' }} />
+      <MoreStackNav.Screen name="AiInsight" component={AiInsightScreen} options={{ title: '🤖 AI 인사이트' }} />
+      <MoreStackNav.Screen name="Stats" component={StatsScreen} options={{ title: '📊 통계' }} />
+      <MoreStackNav.Screen name="Backup" component={BackupScreen} options={{ title: '💾 백업' }} />
+      <MoreStackNav.Screen name="Weight" component={WeightScreen} options={{ title: '⚖️ 체중 목표' }} />
+      <MoreStackNav.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ title: '🔔 알림 설정' }} />
+      <MoreStackNav.Screen name="IfCalc" component={IfCalcScreen} options={{ title: '⏱️ 간헐적 단식' }} />
+      <MoreStackNav.Screen name="MealPhotoNotification" component={MealPhotoNotificationScreen} options={{ title: '📷 식사 사진 알림' }} />
+      <MoreStackNav.Screen name="Medication" component={MedicationScreen} options={{ title: '💊 약 복용 알림' }} />
+      <MoreStackNav.Screen name="DrinkMode" component={DrinkModeScreen} options={{ title: '🍺 술자리 모드' }} />
+      <MoreStackNav.Screen name="CheatDay" component={CheatDayScreen} options={{ title: '🪙 치팅데이 코인' }} />
     </MoreStackNav.Navigator>
   );
 }

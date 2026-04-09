@@ -7,25 +7,18 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMealsByDate, getWorkoutsByDate, getWeeklyStats, getTodayWater } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
+import { useWarningNotifications } from '../hooks/useWarningNotifications';
+import { useCheatDay } from '../context/CheatDayContext';
 import AiScanModal from '../components/AiScanModal';
 import Svg, { Circle } from 'react-native-svg';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  success: '#51CF66',
-  warning: '#FCC419',
-  purple: '#9C88FF',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../theme';
+import { localDateStr, parseLocalDate } from '../utils/dateUtils';
 
 interface WeeklyStat {
   date: string;
@@ -99,7 +92,16 @@ function CircularProgress({ value, max, size = 180 }: { value: number; max: numb
 
 // ─── Weekly Bar Chart ─────────────────────────────────────────────────────────
 function WeeklyChart({ data }: { data: WeeklyStat[] }) {
-  if (!data.length) return null;
+  if (!data.length) {
+    return (
+      <View style={chartStyles.container}>
+        <Text style={chartStyles.title}>주간 칼로리</Text>
+        <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+          <Text style={{ fontSize: 13, color: '#B0BEC5' }}>아직 이번 주 기록이 없어요</Text>
+        </View>
+      </View>
+    );
+  }
   const maxVal = Math.max(...data.map((d) => Math.max(d.foodKcal, d.burnedKcal)), 1);
   const days = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -108,7 +110,7 @@ function WeeklyChart({ data }: { data: WeeklyStat[] }) {
       <Text style={chartStyles.title}>주간 칼로리</Text>
       <View style={chartStyles.bars}>
         {data.map((d, i) => {
-          const date = new Date(d.date + 'T12:00:00'); // 정오 기준으로 파싱해 타임존 오차 제거
+          const date = parseLocalDate(d.date);
           const day = days[date.getDay()];
           const barH = Math.max((d.foodKcal / maxVal) * 100, 4);
           const burnH = Math.max((d.burnedKcal / maxVal) * 100, 4);
@@ -154,12 +156,23 @@ const chartStyles = StyleSheet.create({
 });
 
 // ─── HomeScreen ───────────────────────────────────────────────────────────────
+// ─── BMI 헬퍼 ────────────────────────────────────────────────────────────────
+function getBmiInfo(bmi: number) {
+  if (bmi < 18.5) return { label: '저체중', color: '#4FC3F7' };
+  if (bmi < 23)   return { label: '정상', color: COLORS.success };
+  if (bmi < 25)   return { label: '과체중', color: COLORS.warning };
+  return           { label: '비만', color: COLORS.primary };
+}
+
 export default function HomeScreen({ navigation }: any) {
-  const { logout, goalKcal } = useAuth();
+  const { logout, goalKcal, userWeightKg, userHeightCm } = useAuth();
   const GOAL_KCAL = goalKcal && goalKcal > 0 ? goalKcal : 2000;
-  const { isPremium } = useSubscription();
+  const { isPremium, purchasePremium } = useSubscription();
+  const { status: cheatStatus } = useCheatDay();
+  const { checkLowCalorie, scheduleMotivation } = useWarningNotifications();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [totalKcal, setTotalKcal] = useState(0);
   const [burnedKcal, setBurnedKcal] = useState(0);
   const [waterMl, setWaterMl] = useState(0);
@@ -167,39 +180,69 @@ export default function HomeScreen({ navigation }: any) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [scanVisible, setScanVisible] = useState(false);
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
 
-  const localToday = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
+  // D-day 캐시 읽기
+  useEffect(() => {
+    AsyncStorage.getItem('@weight_prediction_days').then(v => {
+      if (v) setDaysLeft(parseInt(v, 10));
+    });
+  }, []);
+
+  // BMI 계산
+  const bmi = userWeightKg && userHeightCm
+    ? parseFloat((userWeightKg / ((userHeightCm / 100) ** 2)).toFixed(1))
+    : null;
+
 
   const fetchData = useCallback(async () => {
+    setFetchError(false);
     try {
-      const today = localToday();
-      const [mealRes, workoutRes, weeklyRes, waterRes] = await Promise.all([
+      const today = localDateStr();
+      const [mealRes, workoutRes, weeklyRes, waterRes] = await Promise.allSettled([
         getMealsByDate(today),
         getWorkoutsByDate(today),
         getWeeklyStats(),
         getTodayWater(),
       ]);
-      const mealList: Meal[] = mealRes.data || [];
-      const workoutList: Workout[] = workoutRes.data || [];
-      setMeals(mealList);
-      setWorkouts(workoutList);
-      setTotalKcal(mealList.reduce((s: number, m: Meal) => s + m.totalKcal, 0));
-      setBurnedKcal(workoutList.reduce((s: number, w: Workout) => s + w.kcalBurned, 0));
-      setWeeklyData(weeklyRes.data || []);
-      setWaterMl(waterRes.data?.totalMl || 0);
-    } catch (e) {
-      // silently fail on data load
+
+      const allFailed = [mealRes, workoutRes, weeklyRes, waterRes].every(r => r.status === 'rejected');
+      if (allFailed) {
+        setFetchError(true);
+        return;
+      }
+
+      if (mealRes.status === 'fulfilled') {
+        const mealList: Meal[] = mealRes.value.data || [];
+        setMeals(mealList);
+        setTotalKcal(mealList.reduce((s: number, m: Meal) => s + m.totalKcal, 0));
+      }
+      if (workoutRes.status === 'fulfilled') {
+        const workoutList: Workout[] = workoutRes.value.data || [];
+        setWorkouts(workoutList);
+        setBurnedKcal(workoutList.reduce((s: number, w: Workout) => s + w.kcalBurned, 0));
+      }
+      if (weeklyRes.status === 'fulfilled') {
+        setWeeklyData(weeklyRes.value.data || []);
+      }
+      if (waterRes.status === 'fulfilled') {
+        setWaterMl(waterRes.value.data?.totalMl || 0);
+      }
+    } catch (e: any) {
+      setFetchError(true);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchData().finally(() => setLoading(false));
-    }, [fetchData])
+      fetchData().finally(() => {
+        setLoading(false);
+        // 경고 알림: 저열량(14시 이후 조건) + 동기부여(15시 예약, 1회/일)
+        checkLowCalorie(totalKcal, GOAL_KCAL);
+        scheduleMotivation();
+      });
+    }, [fetchData, totalKcal, GOAL_KCAL, checkLowCalorie, scheduleMotivation])
   );
 
   const onRefresh = async () => {
@@ -239,6 +282,16 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
+      {/* 네트워크 오류 배너 */}
+      {fetchError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>⚠️ 데이터를 불러오지 못했습니다</Text>
+          <TouchableOpacity onPress={fetchData}>
+            <Text style={styles.errorBannerRetry}>재시도</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* 과식 경고 - 프리미엄 전용 */}
       {isPremium && totalKcal > GOAL_KCAL * 1.1 && (
         <View style={styles.warningBanner}>
@@ -249,9 +302,9 @@ export default function HomeScreen({ navigation }: any) {
 
       {/* AI 스캔 배너 */}
       <TouchableOpacity style={styles.aiBanner} onPress={() => setScanVisible(true)} activeOpacity={0.85}>
-        <View>
-          <Text style={styles.aiBannerTitle}>🤖 AI 칼로리 스캔</Text>
-          <Text style={styles.aiBannerDesc}>사진 or 텍스트로 칼로리 자동 계산</Text>
+        <View style={{ flex: 1, flexShrink: 1, marginRight: 8 }}>
+          <Text style={styles.aiBannerTitle} numberOfLines={1}>🤖 AI 칼로리 스캔</Text>
+          <Text style={styles.aiBannerDesc} numberOfLines={1}>사진 or 텍스트로 칼로리 자동 계산</Text>
         </View>
         <View style={styles.aiBannerBtn}>
           <Text style={styles.aiBannerBtnText}>스캔하기</Text>
@@ -303,6 +356,81 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
+      {/* ─── 프리미엄 인사이트 ─────────────────────────────────────── */}
+      {isPremium ? (
+        <View style={styles.insightRow}>
+          {/* D-day → 체중 목표 화면 */}
+          <TouchableOpacity
+            style={[styles.insightCard, { borderTopColor: '#9C88FF' }]}
+            onPress={() => navigation.navigate('More', { screen: 'Weight' })}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.insightEmoji}>⚖️</Text>
+            <Text style={[styles.insightNum, { color: '#9C88FF' }]}>
+              {daysLeft && daysLeft > 0 ? `D-${daysLeft}` : '—'}
+            </Text>
+            <Text style={styles.insightLabel}>목표 달성</Text>
+          </TouchableOpacity>
+
+          {/* 치팅데이 코인 → 치팅데이 화면 */}
+          <TouchableOpacity
+            style={[styles.insightCard, { borderTopColor: COLORS.warning }]}
+            onPress={() => navigation.navigate('More', { screen: 'CheatDay' })}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.insightEmoji}>🪙</Text>
+            <Text style={[styles.insightNum, { color: COLORS.warning }]}>
+              {cheatStatus.cheatCoins}개
+            </Text>
+            <Text style={styles.insightLabel}>코인 보유</Text>
+          </TouchableOpacity>
+
+          {/* BMI → 프로필 화면 */}
+          <TouchableOpacity
+            style={[styles.insightCard, { borderTopColor: bmi ? getBmiInfo(bmi).color : '#B0BEC5' }]}
+            onPress={() => navigation.navigate('More', { screen: 'Profile' })}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.insightEmoji}>📊</Text>
+            <Text style={[styles.insightNum, { color: bmi ? getBmiInfo(bmi).color : '#B0BEC5' }]}>
+              {bmi ?? '—'}
+            </Text>
+            <Text style={styles.insightLabel}>{bmi ? getBmiInfo(bmi).label : 'BMI'}</Text>
+          </TouchableOpacity>
+
+          {/* 연속 기록 → 치팅데이 화면 */}
+          <TouchableOpacity
+            style={[styles.insightCard, { borderTopColor: COLORS.success }]}
+            onPress={() => navigation.navigate('More', { screen: 'CheatDay' })}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.insightEmoji}>🔥</Text>
+            <Text style={[styles.insightNum, { color: COLORS.success }]}>
+              {cheatStatus.streakCount}일
+            </Text>
+            <Text style={styles.insightLabel}>연속 달성</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        /* 비프리미엄: 잠금 카드 (탭 → 즉시 해제) */
+        <TouchableOpacity
+          style={styles.insightLock}
+          onPress={purchasePremium}
+          activeOpacity={0.85}
+        >
+          <View style={styles.insightLockLeft}>
+            <Text style={styles.insightLockTitle}>👑 프리미엄 인사이트</Text>
+            <Text style={styles.insightLockDesc}>목표 달성 D-day · 치팅데이 코인 · BMI · 연속 달성</Text>
+            <Text style={styles.insightLockCta}>탭하면 지금 바로 체험 →</Text>
+          </View>
+          <View style={styles.insightLockMini}>
+            <Text style={styles.insightLockMiniItem}>⚖️ D-?</Text>
+            <Text style={styles.insightLockMiniItem}>🪙 ?개</Text>
+            <Text style={styles.insightLockMiniItem}>📊 BMI ?</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* Weekly Chart */}
       <View style={styles.card}>
         <WeeklyChart data={weeklyData} />
@@ -316,7 +444,7 @@ export default function HomeScreen({ navigation }: any) {
             { emoji: '📷', label: 'AI 스캔', onPress: () => setScanVisible(true), color: COLORS.primary },
             { emoji: '🍽️', label: '식사 기록', onPress: () => navigation.navigate('Meal'), color: '#FCC419' },
             { emoji: '💪', label: '운동 기록', onPress: () => navigation.navigate('Workout'), color: COLORS.secondary },
-            { emoji: '⚖️', label: '체중 기록', onPress: () => navigation.navigate('Weight'), color: '#9C88FF' },
+            { emoji: '⚖️', label: '체중 기록', onPress: () => navigation.navigate('More', { screen: 'Weight' }), color: '#9C88FF' },
             { emoji: '💧', label: '물 섭취', onPress: () => navigation.navigate('More', { screen: 'Water' }), color: '#4FC3F7' },
             { emoji: '🌸', label: '생리주기', onPress: () => navigation.navigate('More', { screen: 'Cycle' }), color: '#FF8FAB' },
             { emoji: '👤', label: '프로필', onPress: () => navigation.navigate('More', { screen: 'Profile' }), color: '#78909C' },
@@ -402,7 +530,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', marginBottom: 6,
   },
   quickEmoji: { fontSize: 22 },
-  quickLabel: { fontSize: 10, color: COLORS.text, fontWeight: '600', textAlign: 'center' },
+  quickLabel: { fontSize: 10, color: COLORS.text, fontWeight: '600', textAlign: 'center', flexShrink: 1 },
   aiBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: COLORS.primary,
@@ -418,10 +546,52 @@ const styles = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8,
   },
   aiBannerBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  errorBanner: {
+    backgroundColor: '#FFF3E0', borderRadius: 12, padding: 12, marginBottom: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderLeftWidth: 3, borderLeftColor: '#FF9800',
+  },
+  errorBannerText: { fontSize: 13, color: '#E65100', fontWeight: '600' },
+  errorBannerRetry: { fontSize: 13, color: '#FF9800', fontWeight: '700' },
   warningBanner: {
     backgroundColor: '#FFF3E0', borderRadius: 16, padding: 14, marginBottom: 12,
     borderLeftWidth: 4, borderLeftColor: '#FF9800',
   },
   warningText: { fontSize: 14, fontWeight: '700', color: '#E65100' },
   warningDesc: { fontSize: 12, color: '#78909C', marginTop: 3 },
+  // ── 프리미엄 인사이트 ──────────────────────────────────────────────
+  insightRow: {
+    flexDirection: 'row', gap: 8, marginBottom: 16,
+  },
+  insightCard: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    borderTopWidth: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  insightEmoji: { fontSize: 20, marginBottom: 4 },
+  insightNum: { fontSize: 15, fontWeight: '800' },
+  insightLabel: { fontSize: 9, color: '#78909C', marginTop: 2, fontWeight: '600' },
+  insightLock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A1A2E',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    gap: 12,
+  },
+  insightLockLeft: { flex: 1 },
+  insightLockTitle: { fontSize: 14, fontWeight: '800', color: '#FFD700' },
+  insightLockDesc: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 3, lineHeight: 15 },
+  insightLockCta: { fontSize: 11, color: '#FFD700', fontWeight: '700', marginTop: 6 },
+  insightLockMini: { alignItems: 'flex-end', gap: 4 },
+  insightLockMiniItem: { fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: '600' },
 });

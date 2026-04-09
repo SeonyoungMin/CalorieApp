@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,26 +12,30 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-
-const COLORS = {
-  primary: '#FF6B6B',
-  secondary: '#4ECDC4',
-  bg: '#F0F4F8',
-  card: '#FFFFFF',
-  text: '#2C3E50',
-};
+import { COLORS } from '../../theme';
 
 export default function RegisterScreen({ navigation }: any) {
   const { register } = useAuth();
+  const emailRef = useRef<any>(null);
+  const passwordRef = useRef<any>(null);
+  const confirmRef = useRef<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
   const handleRegister = async () => {
     if (!email.trim() || !password.trim() || !nickname.trim()) {
       Alert.alert('입력 오류', '모든 필드를 입력해주세요.');
+      return;
+    }
+    if (!isValidEmail(email.trim())) {
+      Alert.alert('입력 오류', '올바른 이메일 형식을 입력해주세요.');
       return;
     }
     if (password !== confirmPassword) {
@@ -79,6 +83,8 @@ export default function RegisterScreen({ navigation }: any) {
               style={styles.input}
               placeholder="사용할 닉네임을 입력하세요"
               placeholderTextColor="#B0BEC5"
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
               value={nickname}
               onChangeText={setNickname}
             />
@@ -87,11 +93,14 @@ export default function RegisterScreen({ navigation }: any) {
           <View style={styles.inputWrap}>
             <Text style={styles.label}>이메일</Text>
             <TextInput
+              ref={emailRef}
               style={styles.input}
               placeholder="example@email.com"
               placeholderTextColor="#B0BEC5"
               keyboardType="email-address"
               autoCapitalize="none"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
               value={email}
               onChangeText={setEmail}
             />
@@ -99,30 +108,46 @@ export default function RegisterScreen({ navigation }: any) {
 
           <View style={styles.inputWrap}>
             <Text style={styles.label}>비밀번호</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="6자 이상 입력하세요"
-              placeholderTextColor="#B0BEC5"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
+            <View style={styles.passwordWrap}>
+              <TextInput
+                ref={passwordRef}
+                style={styles.passwordInput}
+                placeholder="6자 이상 입력하세요"
+                placeholderTextColor="#B0BEC5"
+                secureTextEntry={!showPassword}
+                returnKeyType="next"
+                onSubmitEditing={() => confirmRef.current?.focus()}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={styles.eyeBtn}>
+                <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.inputWrap}>
             <Text style={styles.label}>비밀번호 확인</Text>
-            <TextInput
-              style={[
-                styles.input,
-                confirmPassword.length > 0 &&
-                  (password === confirmPassword ? styles.inputSuccess : styles.inputError),
-              ]}
-              placeholder="비밀번호를 다시 입력하세요"
-              placeholderTextColor="#B0BEC5"
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
+            <View style={[
+              styles.passwordWrap,
+              confirmPassword.length > 0 &&
+                (password === confirmPassword ? styles.inputSuccess : styles.inputError),
+            ]}>
+              <TextInput
+                ref={confirmRef}
+                style={styles.passwordInput}
+                placeholder="비밀번호를 다시 입력하세요"
+                placeholderTextColor="#B0BEC5"
+                secureTextEntry={!showConfirm}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+              />
+              <TouchableOpacity onPress={() => setShowConfirm(v => !v)} style={styles.eyeBtn}>
+                <Text style={styles.eyeText}>{showConfirm ? '🙈' : '👁️'}</Text>
+              </TouchableOpacity>
+            </View>
             {confirmPassword.length > 0 && password !== confirmPassword && (
               <Text style={styles.errorText}>비밀번호가 일치하지 않습니다.</Text>
             )}
@@ -186,6 +211,23 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     backgroundColor: '#FAFBFD',
   },
+  passwordWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E0E7EF',
+    borderRadius: 12,
+    backgroundColor: '#FAFBFD',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#2C3E50',
+  },
+  eyeBtn: { paddingHorizontal: 14 },
+  eyeText: { fontSize: 18 },
   inputSuccess: { borderColor: '#51CF66' },
   inputError: { borderColor: '#FF6B6B' },
   errorText: { fontSize: 12, color: '#FF6B6B', marginTop: 4 },

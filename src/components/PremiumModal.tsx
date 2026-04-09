@@ -17,11 +17,14 @@ const FEATURES = [
   { emoji: '🍽️', text: 'AI 맞춤 식단 추천' },
   { emoji: '💪', text: 'AI 운동 루틴 추천' },
   { emoji: '📋', text: 'AI 식단 분석 & 피드백' },
-  { emoji: '📊', text: 'AI 주간 리포트' },
-  { emoji: '⚠️', text: '과식 경고 알림' },
+  { emoji: '📊', text: 'AI 주간 리포트 & 상세 통계' },
+  { emoji: '🧮', text: '만약에 계산기 — 음식·운동별 목표일 변화 시뮬레이션' },
+  { emoji: '💊', text: '약 복용 알림 — 매일 약 챙기기 & 복용 체크' },
+  { emoji: '🪙', text: '치팅데이 코인 — 7일 연속 달성 → 코인 → 치팅데이 1회' },
+  { emoji: '⚖️', text: '홈 인사이트 카드 — 목표 D-day · BMI · 연속달성 · 코인' },
   { emoji: '🗓️', text: '월간 캘린더 & 영양소 분석' },
-  { emoji: '📉', text: '체중 변화 그래프 & 예측' },
-  { emoji: '☁️', text: '클라우드 데이터 백업' },
+  { emoji: '📉', text: '체중 변화 그래프 & 목표일 예측' },
+  { emoji: '☁️', text: 'AI 건강 리포트 내보내기 & 클라우드 백업' },
 ];
 
 export default function PremiumModal({ visible, onClose, onSubscribe, isPremium, onCancel }: Props) {
@@ -67,7 +70,7 @@ export default function PremiumModal({ visible, onClose, onSubscribe, isPremium,
             <View style={styles.headerWrap}>
               <Text style={styles.crown}>👑</Text>
               <Text style={styles.title}>CalorieApp 프리미엄</Text>
-              <Text style={styles.subtitle}>AI 칼로리 스캔을 무제한으로</Text>
+              <Text style={styles.subtitle}>모든 프리미엄 기능을 무제한으로</Text>
             </View>
 
             {/* 가격 카드 */}
@@ -102,7 +105,12 @@ export default function PremiumModal({ visible, onClose, onSubscribe, isPremium,
                 ['칼로리 기록', '✓', '✓'],
                 ['운동 기록', '✓', '✓'],
                 ['통계', '기본', '상세'],
-                ['백업', '✗', '✓'],
+                ['만약에 계산기', '✗', '✓'],
+                ['약 복용 알림', '✗', '✓'],
+                ['치팅데이 코인', '✗', '✓'],
+                ['AI 인사이트', '✗', '✓'],
+                ['홈 인사이트 카드', '✗', '✓'],
+                ['백업 & 리포트', '✗', '✓'],
               ].map(([feat, free, premium], i) => (
                 <View key={i} style={styles.compareRow}>
                   <Text style={styles.compareCol}>{feat}</Text>

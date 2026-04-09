@@ -2,10 +2,8 @@ export const localDateStr = (date = new Date()): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-// 디바이스 타임존 설정에 무관하게 항상 한국(Asia/Seoul) 기준 오늘 날짜 반환
-export const todayStr = (): string => {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-};
+// 기기 로컬 타임존 기준 오늘 날짜 반환 (지역에 따라 자동 적용)
+export const todayStr = (): string => localDateStr();
 
 export const dateLabel = (d: string): string => {
   const today = todayStr();

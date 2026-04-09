@@ -12,10 +12,35 @@ import {
   RefreshControl,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { getCycleInfo, saveCycle } from '../api/api';
 import { COLORS } from '../theme';
 import CalendarPicker from '../components/CalendarPicker';
+
+const CYCLE_LOCAL_KEY = '@cycle_info';
+
+async function loadLocalCycle(): Promise<CycleInfo | null> {
+  try {
+    if (Platform.OS === 'web') {
+      const s = localStorage.getItem(CYCLE_LOCAL_KEY);
+      return s ? JSON.parse(s) : null;
+    }
+    const s = await AsyncStorage.getItem(CYCLE_LOCAL_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+}
+
+async function saveLocalCycle(info: CycleInfo): Promise<void> {
+  try {
+    const s = JSON.stringify(info);
+    if (Platform.OS === 'web') {
+      localStorage.setItem(CYCLE_LOCAL_KEY, s);
+    } else {
+      await AsyncStorage.setItem(CYCLE_LOCAL_KEY, s);
+    }
+  } catch {}
+}
 
 interface CycleInfo {
   lastPeriodDate: string;
@@ -42,6 +67,13 @@ function getPhaseBadge(phase: CyclePhase): { bg: string; color: string; emoji: s
   }
 }
 
+function parseCycleDate(raw: any): string {
+  const s = String(raw || '');
+  const m = s.match(/(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})/);
+  if (!m) return '';
+  return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+}
+
 function computeCycleStatus(info: CycleInfo): {
   phase: CyclePhase;
   dayOfCycle: number;
@@ -53,8 +85,9 @@ function computeCycleStatus(info: CycleInfo): {
   const periodLen = Number(info.periodLength) || 5;
 
   const today = new Date();
-  const last = new Date((info.lastPeriodDate || '') + 'T12:00:00');
-  if (isNaN(last.getTime())) {
+  const dateStr = parseCycleDate(info.lastPeriodDate);
+  const last = new Date(dateStr + 'T12:00:00');
+  if (!dateStr || isNaN(last.getTime())) {
     return {
       phase: '황체기',
       dayOfCycle: 1,
@@ -106,7 +139,7 @@ function CycleCalendar({ info }: { info: CycleInfo }) {
   const periodLength = Number(info.periodLength) || 5;
   const ovulationDay = cycleLength - 14;
   const today = new Date();
-  const last = new Date((lastPeriodDate || '') + 'T12:00:00');
+  const last = new Date(parseCycleDate(lastPeriodDate) + 'T12:00:00');
   const lastTime = last.getTime();
   const diff = isNaN(lastTime) ? 0 : Math.floor((today.getTime() - lastTime) / (1000 * 60 * 60 * 24));
   const currentDay = (diff % cycleLength) + 1;
@@ -189,14 +222,22 @@ export default function CycleScreen({ navigation }: any) {
   const fetchData = useCallback(async () => {
     try {
       const res = await getCycleInfo();
-      if (res.data) {
+      if (res.data && res.data.lastPeriodDate) {
         setCycleInfo(res.data);
         setLastPeriodDate(res.data.lastPeriodDate);
         setCycleLength(String(res.data.cycleLength || 28));
         setPeriodLength(String(res.data.periodLength || 5));
+        await saveLocalCycle(res.data);
+        return;
       }
-    } catch {
-      Alert.alert('오류', '생리주기 정보를 불러오지 못했습니다.');
+    } catch {}
+    // 서버 실패 시 로컬 캐시 사용
+    const local = await loadLocalCycle();
+    if (local) {
+      setCycleInfo(local);
+      setLastPeriodDate(local.lastPeriodDate);
+      setCycleLength(String(local.cycleLength || 28));
+      setPeriodLength(String(local.periodLength || 5));
     }
   }, []);
 
@@ -215,7 +256,7 @@ export default function CycleScreen({ navigation }: any) {
 
   const handleSave = async () => {
     if (!lastPeriodDate) {
-      Alert.alert('입력 오류', '마지막 생리 시작일을 입력해주세요. (YYYY-MM-DD)');
+      Alert.alert('입력 오류', '마지막 생리 시작일을 입력해주세요.');
       return;
     }
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -223,15 +264,17 @@ export default function CycleScreen({ navigation }: any) {
       Alert.alert('형식 오류', 'YYYY-MM-DD 형식으로 입력해주세요. (예: 2024-01-15)');
       return;
     }
+    const cl = parseInt(cycleLength, 10) || 28;
+    const pl = parseInt(periodLength, 10) || 5;
     setSaving(true);
     try {
-      await saveCycle({
-        lastPeriodDate,
-        cycleLength: parseInt(cycleLength, 10) || 28,
-        periodLength: parseInt(periodLength, 10) || 5,
-      });
-      await fetchData();
+      const saved: CycleInfo = { lastPeriodDate, cycleLength: cl, periodLength: pl };
+      // 로컬에 먼저 저장 (서버 실패해도 유지)
+      await saveLocalCycle(saved);
+      setCycleInfo(saved);
       setModalVisible(false);
+      // 서버에도 저장 (실패해도 무시)
+      saveCycle({ lastPeriodDate, cycleLength: cl, periodLength: pl }).catch(() => {});
     } catch (e: any) {
       Alert.alert('저장 실패', e?.response?.data?.message || '다시 시도해주세요.');
     } finally {
@@ -256,12 +299,8 @@ export default function CycleScreen({ navigation }: any) {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.pink} />}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>🌸 생리주기</Text>
+        {/* 설정 버튼 */}
+        <View style={[styles.header, { justifyContent: 'flex-end' }]}>
           <TouchableOpacity style={styles.editBtn} onPress={() => setModalVisible(true)}>
             <Text style={styles.editBtnText}>설정</Text>
           </TouchableOpacity>
@@ -283,7 +322,7 @@ export default function CycleScreen({ navigation }: any) {
                 <Text style={styles.phaseEmoji}>{badge.emoji}</Text>
                 <View style={styles.phaseInfo}>
                   <Text style={[styles.phaseText, { color: badge.color }]}>{status.phase}</Text>
-                  <Text style={styles.phaseSub}>주기 {status.dayOfCycle}일째</Text>
+                  <Text style={styles.phaseSub}>주기 {Number(status.dayOfCycle) || 1}일째</Text>
                 </View>
                 <View style={[styles.phaseBadge, { backgroundColor: badge.color }]}>
                   <Text style={styles.phaseBadgeText}>D+{status.dayOfCycle}</Text>
@@ -307,7 +346,7 @@ export default function CycleScreen({ navigation }: any) {
                 <Text style={styles.infoEmoji}>🥚</Text>
                 <Text style={styles.infoLabel}>배란 예정일</Text>
                 <Text style={styles.infoValue}>{status?.ovulationDate}</Text>
-                <Text style={styles.infoSub}>주기 {cycleInfo.cycleLength - 14}일째</Text>
+                <Text style={styles.infoSub}>주기 {(Number(cycleInfo.cycleLength) || 28) - 14}일째</Text>
               </View>
             </View>
 

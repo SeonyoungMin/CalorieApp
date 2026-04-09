@@ -12,6 +12,11 @@ import { useSubscription } from '../hooks/useSubscription';
 import { COLORS } from '../theme';
 
 const MENU_ITEMS = [
+  { emoji: '🧮', label: '만약에 계산기', desc: '먹으면? 운동하면? 목표일 변화 계산', screen: 'IfCalc', color: '#FF9800', premium: true },
+  { emoji: '📷', label: '식사 사진 알림', desc: '식사 시간 알림 · 최대 10개 커스텀', screen: 'MealPhotoNotification', color: '#00BCD4', premium: false },
+  { emoji: '💊', label: '약 복용 알림', desc: '매일 약 챙기기 · 복용 체크', screen: 'Medication', color: COLORS.purple, premium: true },
+  { emoji: '🍺', label: '술자리 모드', desc: '칼로리 계산 · 회식 알림 · 해장 추천', screen: 'DrinkMode', color: '#FF9800', premium: false },
+  { emoji: '🪙', label: '치팅데이 코인', desc: '7일 연속 달성 → 코인 → 치팅데이 1회', screen: 'CheatDay', color: COLORS.warning, premium: true },
   { emoji: '🤖', label: 'AI 인사이트', desc: '식단분석 · 식단추천 · 운동추천 · 주간리포트', screen: 'AiInsight', color: COLORS.primary, premium: true },
   { emoji: '📊', label: '상세 통계', desc: '영양소 · 캘린더 · 체중 그래프', screen: 'Stats', color: COLORS.secondary, premium: true },
   { emoji: '⚖️', label: '체중 기록', desc: '체중 변화 기록 및 그래프', screen: 'Weight', color: COLORS.purple, premium: false },

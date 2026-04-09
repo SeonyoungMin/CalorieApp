@@ -14,9 +14,13 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getWeightList, saveWeight, deleteWeight } from '../api/api';
+import { useSubscription } from '../hooks/useSubscription';
+import { useWeightGoal } from '../hooks/useWeightGoal';
 import { COLORS } from '../theme';
 import { todayStr, dateLabel } from '../utils/dateUtils';
 import CalendarPicker from '../components/CalendarPicker';
+import WeightGoalCard from '../components/WeightGoalCard';
+import WeightGoalModal from '../components/WeightGoalModal';
 
 interface WeightRecord {
   weightId: number;
@@ -63,10 +67,13 @@ function MiniChart({ data }: { data: WeightRecord[] }) {
 }
 
 export default function WeightScreen() {
+  const { isPremium } = useSubscription();
+  const { goalData, avgData, prediction, history, fetch: fetchGoal, saveWeightGoal } = useWeightGoal();
   const [records, setRecords] = useState<WeightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [weightInput, setWeightInput] = useState('');
   const [logDate, setLogDate] = useState(todayStr());
@@ -90,8 +97,8 @@ export default function WeightScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      fetchData().finally(() => setLoading(false));
-    }, [fetchData])
+      Promise.all([fetchData(), fetchGoal()]).finally(() => setLoading(false));
+    }, [fetchData, fetchGoal])
   );
 
   const onRefresh = async () => {
@@ -219,12 +226,8 @@ export default function WeightScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>⚖️ 몸무게 기록</Text>
-            <Text style={styles.headerSub}>체중 변화를 추적하세요</Text>
-          </View>
+        {/* + 기록 버튼 */}
+        <View style={[styles.header, { justifyContent: 'flex-end' }]}>
           <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
             <Text style={styles.addBtnText}>+ 기록</Text>
           </TouchableOpacity>
@@ -236,7 +239,7 @@ export default function WeightScreen() {
             <View style={styles.currentLeft}>
               <Text style={styles.currentLabel}>현재 체중</Text>
               <View style={styles.currentWeightRow}>
-                <Text style={styles.currentWeight}>{latest.weightKg}</Text>
+                <Text style={styles.currentWeight}>{Number(latest.weightKg) || '-'}</Text>
                 <Text style={styles.currentUnit}> kg</Text>
               </View>
               <Text style={styles.currentDate}>{latest.logDate}</Text>
@@ -251,6 +254,16 @@ export default function WeightScreen() {
             <Text style={styles.currentEmoji}>⚖️</Text>
           </View>
         )}
+
+        {/* 목표 체중 & 예상 달성일 카드 */}
+        <WeightGoalCard
+          goalData={goalData}
+          avgData={avgData}
+          prediction={prediction}
+          history={history}
+          isPremium={isPremium}
+          onSettingsPress={() => setGoalModalVisible(true)}
+        />
 
         {/* Mini Chart */}
         {records.length >= 2 && (
@@ -331,6 +344,18 @@ export default function WeightScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* 목표 체중 설정 모달 */}
+      <WeightGoalModal
+        visible={goalModalVisible}
+        currentWeight={goalData.currentWeight}
+        goalWeight={goalData.goalWeight}
+        onSave={async (cur, goal) => {
+          await saveWeightGoal(cur, goal);
+          await fetchGoal();
+        }}
+        onClose={() => setGoalModalVisible(false)}
+      />
 
       {/* Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>

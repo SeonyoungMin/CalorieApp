@@ -110,14 +110,16 @@ export default function WorkoutScreen() {
 
   const selectPreset = (preset: (typeof PRESET_WORKOUTS)[0]) => {
     setExerciseName(preset.name);
-    if (durationMin) setKcalBurned(String(Math.round(preset.kcalPerMin * parseInt(durationMin, 10))));
+    const mins = parseInt(durationMin, 10);
+    if (durationMin && !isNaN(mins)) setKcalBurned(String(Math.round(preset.kcalPerMin * mins)));
   };
 
   const onDurationChange = (val: string) => {
     const numeric = val.replace(/[^0-9]/g, '');
     setDurationMin(numeric);
     const preset = PRESET_WORKOUTS.find((p) => p.name === exerciseName);
-    if (preset && numeric) setKcalBurned(String(Math.round(preset.kcalPerMin * parseInt(numeric, 10))));
+    const mins2 = parseInt(numeric, 10);
+    if (preset && numeric && !isNaN(mins2)) setKcalBurned(String(Math.round(preset.kcalPerMin * mins2)));
   };
 
   const resetForm = () => { setExerciseName(''); setDurationMin(''); setKcalBurned(''); };

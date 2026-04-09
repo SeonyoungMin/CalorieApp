@@ -68,13 +68,6 @@ export default function BackupScreen({ navigation }: any) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>‹</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>클라우드 데이터 백업</Text>
-      </View>
 
       {/* 동기화 상태 카드 */}
       <View style={styles.syncCard}>

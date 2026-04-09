@@ -9,7 +9,7 @@ const client = new Anthropic({
 });
 
 export interface FoodCalorieResult {
-  foods: { name: string; kcal: number; amount: string }[];
+  foods: { name: string; kcal: number; amount: string; confidence?: number }[];
   totalKcal: number;
   summary: string;
 }
@@ -119,6 +119,48 @@ export async function scanReceipt(base64Image: string, mimeType = 'image/jpeg'):
   return JSON.parse(match[0]);
 }
 
+export async function extractBarcodeNumber(base64Image: string, mimeType = 'image/jpeg'): Promise<string | null> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 64,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType as any, data: base64Image } },
+        { type: 'text', text: '이 이미지에서 바코드 번호(숫자)만 추출해주세요. 숫자만 출력하고 다른 텍스트는 쓰지 마세요. 바코드가 없으면 null이라고만 답하세요.' },
+      ],
+    }],
+  });
+  const text = ((response.content[0] as any).text || '').trim();
+  if (!text || text.toLowerCase() === 'null') return null;
+  const match = text.match(/\d{8,14}/);
+  return match ? match[0] : null;
+}
+
+export async function lookupBarcodeByNumber(barcode: string): Promise<BarcodeResult> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `바코드 번호 ${barcode} 에 해당하는 식품 정보와 영양성분을 알려주세요. 한국 식품이면 한국 제품명으로 알려주세요.
+반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{
+  "productName": "제품명",
+  "brand": "브랜드명",
+  "calories": 칼로리숫자,
+  "servingSize": "1회 제공량",
+  "nutrients": {"carb": 탄수화물g, "protein": 단백질g, "fat": 지방g, "sodium": 나트륨mg},
+  "summary": "한줄요약"
+}`,
+    }],
+  });
+  const text = (response.content[0] as any).text;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('AI 응답 파싱 실패');
+  return JSON.parse(match[0]);
+}
+
 export async function scanFoodImage(base64Image: string, mimeType: string = 'image/jpeg'): Promise<FoodCalorieResult> {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -138,10 +180,14 @@ export async function scanFoodImage(base64Image: string, mimeType: string = 'ima
           {
             type: 'text',
             text: `이 음식 사진을 분석해서 칼로리를 계산해주세요.
+주의사항:
+- 음식이 포장지/비닐/랩에 싸여 있다면 포장재가 아닌 포장 속 실제 음식 기준으로 계산하세요
+- 포장지/비닐/랩/용기 자체를 음식으로 인식하지 마세요
+- 인식이 불확실한 음식은 confidence 값을 낮게(0.5 미만) 설정하세요
 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {
   "foods": [
-    {"name": "음식명", "kcal": 숫자, "amount": "양(예: 1인분, 200g)"}
+    {"name": "음식명", "kcal": 숫자, "amount": "양(예: 1인분, 200g)", "confidence": 0.9}
   ],
   "totalKcal": 총칼로리숫자,
   "summary": "한줄요약"

@@ -6,6 +6,7 @@ import {
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
   scanNutritionLabel, scanFoodImage, scanReceipt,
+  calculateCaloriesFromText,
   NutritionLabelResult,
 } from '../services/claudeService';
 import { saveMeal } from '../api/api';
@@ -20,6 +21,7 @@ interface EditableFood {
   name: string;
   amount: string;
   kcal: string;
+  confidence?: number;
 }
 
 interface NutritionDetail {
@@ -48,11 +50,16 @@ export default function ScanScreen() {
   const [nutritionDetail, setNutritionDetail] = useState<NutritionDetail | null>(null);
   const [mealType, setMealType] = useState('아침');
   const [selectedCard, setSelectedCard] = useState<ScanType | null>(null);
+  const [aiText, setAiText] = useState('');
+  const [aiAmount, setAiAmount] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
 
   const totalKcal = editableFoods.reduce((s, f) => s + (parseInt(f.kcal) || 0), 0);
 
-  const applyFoodResult = (foods: { name: string; kcal: number; amount: string }[]) => {
-    setEditableFoods(foods.map(f => ({ name: f.name, amount: f.amount || '', kcal: String(f.kcal) })));
+  const applyFoodResult = (foods: { name: string; kcal: number; amount: string; confidence?: number }[]) => {
+    setEditableFoods(foods.map(f => ({ name: f.name, amount: f.amount || '', kcal: String(f.kcal), confidence: f.confidence })));
   };
 
   const applyNutritionResult = (res: NutritionLabelResult) => {
@@ -136,7 +143,9 @@ export default function ScanScreen() {
     }
 
     const picker = useCamera ? launchCamera : launchImageLibrary;
-    picker({ mediaType: 'photo', includeBase64: true, quality: 0.4, maxWidth: 1280, maxHeight: 1280 }, (res) => {
+    const quality = useCamera ? 0.2 : 0.4;
+    const maxSize = useCamera ? 800 : 1280;
+    picker({ mediaType: 'photo', includeBase64: true, quality, maxWidth: maxSize, maxHeight: maxSize }, (res) => {
       if (res.didCancel || !res.assets?.[0]?.base64) return;
       const asset = res.assets[0];
       // 네이티브 피커는 mime 타입을 잘못 보고하는 경우가 있어 항상 jpeg로 고정
@@ -151,6 +160,47 @@ export default function ScanScreen() {
     setNutritionDetail(null);
     setLoading(false);
     setSelectedCard(null);
+    setAiText('');
+    setAiAmount('');
+    setEditMode(false);
+    setSelectedIndices([]);
+  };
+
+  const toggleSelect = (idx: number) => {
+    setSelectedIndices(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
+  const deleteSelected = () => {
+    setEditableFoods(prev => prev.filter((_, i) => !selectedIndices.includes(i)));
+    setSelectedIndices([]);
+    setEditMode(false);
+  };
+
+  const deleteAll = () => {
+    setEditableFoods([]);
+    setSelectedIndices([]);
+    setEditMode(false);
+  };
+
+  const handleAiAdd = async () => {
+    if (!aiText.trim()) return;
+    setAiLoading(true);
+    try {
+      const query = aiAmount.trim() ? `${aiText.trim()} ${aiAmount.trim()}` : aiText.trim();
+      const result = await calculateCaloriesFromText(query);
+      setEditableFoods(prev => [
+        ...prev,
+        ...result.foods.map(f => ({ name: f.name, amount: f.amount || '', kcal: String(f.kcal) })),
+      ]);
+      setAiText('');
+      setAiAmount('');
+    } catch {
+      Alert.alert('AI 계산 실패', '다시 시도해주세요.');
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const updateFood = (idx: number, field: keyof EditableFood, value: string) => {
@@ -293,9 +343,35 @@ export default function ScanScreen() {
 
                 {/* 식사로 저장할 음식 목록 */}
                 <View style={styles.resultCard}>
-                  <Text style={styles.resultCardTitle}>
-                    {currentType === 'receipt' ? '🧾 인식된 음식 목록' : '🍽️ 식사로 저장'}
-                  </Text>
+                  <View style={styles.resultCardHeader}>
+                    <Text style={styles.resultCardTitle}>
+                      {currentType === 'receipt' ? '🧾 인식된 음식 목록' : '🍽️ 식사로 저장'}
+                    </Text>
+                    {!editMode ? (
+                      <TouchableOpacity style={styles.editToggleBtn} onPress={() => setEditMode(true)}>
+                        <Text style={styles.editToggleText}>편집</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity style={styles.editToggleBtn} onPress={() => { setEditMode(false); setSelectedIndices([]); }}>
+                        <Text style={styles.editToggleText}>완료</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {editMode && (
+                    <View style={styles.editActionBar}>
+                      <TouchableOpacity
+                        style={[styles.editActionBtn, { backgroundColor: COLORS.warning }, !selectedIndices.length && { opacity: 0.4 }]}
+                        onPress={deleteSelected}
+                        disabled={!selectedIndices.length}
+                      >
+                        <Text style={styles.editActionText}>선택 삭제 {selectedIndices.length > 0 ? `(${selectedIndices.length})` : ''}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.editActionBtn, { backgroundColor: COLORS.primary }]} onPress={deleteAll}>
+                        <Text style={styles.editActionText}>전체 삭제</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
                   {/* 식사 유형 선택 */}
                   <View style={styles.mealTypeRow}>
@@ -314,43 +390,95 @@ export default function ScanScreen() {
 
                   {/* 음식 아이템 */}
                   {editableFoods.map((food, idx) => (
-                    <View key={idx} style={styles.foodItem}>
-                      <View style={styles.foodItemMain}>
-                        <TextInput
-                          style={styles.foodNameInput}
-                          value={food.name}
-                          onChangeText={v => updateFood(idx, 'name', v)}
-                          placeholder="음식명"
-                          placeholderTextColor="#B0BEC5"
-                        />
-                        <TextInput
-                          style={styles.foodAmountInput}
-                          value={food.amount}
-                          onChangeText={v => updateFood(idx, 'amount', v)}
-                          placeholder="양"
-                          placeholderTextColor="#B0BEC5"
-                        />
+                    editMode ? (
+                      <TouchableOpacity key={idx} style={[styles.foodItem, selectedIndices.includes(idx) && styles.foodItemSelected]} onPress={() => toggleSelect(idx)} activeOpacity={0.7}>
+                        <View style={styles.foodItemMain}>
+                          <View style={[styles.scanCheckbox, selectedIndices.includes(idx) && styles.scanCheckboxOn]}>
+                            {selectedIndices.includes(idx) && <Text style={styles.scanCheckmark}>✓</Text>}
+                          </View>
+                          <Text style={[styles.foodNameInput, { flex: 2, paddingVertical: 8 }]} numberOfLines={1}>{food.name || '(음식명 없음)'}</Text>
+                          <Text style={styles.foodAmountInput} numberOfLines={1}>{food.amount}</Text>
+                        </View>
+                        <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '700', textAlign: 'right', marginTop: 4 }}>{food.kcal || '0'} kcal</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View key={idx} style={styles.foodItem}>
+                        {food.confidence !== undefined && food.confidence < 0.6 && (
+                          <View style={styles.uncertainBadge}>
+                            <Text style={styles.uncertainBadgeText}>⚠️ 불확실 — 직접 확인해주세요</Text>
+                          </View>
+                        )}
+                        <View style={styles.foodItemMain}>
+                          <TextInput
+                            style={styles.foodNameInput}
+                            value={food.name}
+                            onChangeText={v => updateFood(idx, 'name', v)}
+                            placeholder="음식명"
+                            placeholderTextColor="#B0BEC5"
+                          />
+                          <TextInput
+                            style={styles.foodAmountInput}
+                            value={food.amount}
+                            onChangeText={v => updateFood(idx, 'amount', v)}
+                            placeholder="양"
+                            placeholderTextColor="#B0BEC5"
+                          />
+                        </View>
+                        <View style={styles.foodItemBottom}>
+                          <TextInput
+                            style={styles.foodKcalInput}
+                            value={food.kcal}
+                            onChangeText={v => updateFood(idx, 'kcal', v)}
+                            keyboardType="numeric"
+                            placeholder="0"
+                            placeholderTextColor="#B0BEC5"
+                          />
+                          <Text style={styles.foodKcalUnit}>kcal</Text>
+                          <TouchableOpacity onPress={() => removeFood(idx)} style={styles.removeBtn}>
+                            <Text style={styles.removeBtnText}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                      <View style={styles.foodItemBottom}>
-                        <TextInput
-                          style={styles.foodKcalInput}
-                          value={food.kcal}
-                          onChangeText={v => updateFood(idx, 'kcal', v)}
-                          keyboardType="numeric"
-                          placeholder="0"
-                          placeholderTextColor="#B0BEC5"
-                        />
-                        <Text style={styles.foodKcalUnit}>kcal</Text>
-                        <TouchableOpacity onPress={() => removeFood(idx)} style={styles.removeBtn}>
-                          <Text style={styles.removeBtnText}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    )
                   ))}
 
-                  <TouchableOpacity style={styles.addFoodBtn} onPress={addFood}>
-                    <Text style={styles.addFoodBtnText}>+ 음식 추가</Text>
-                  </TouchableOpacity>
+                  {!editMode && (
+                    <TouchableOpacity style={styles.addFoodBtn} onPress={addFood}>
+                      <Text style={styles.addFoodBtnText}>+ 수동 추가</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* AI 텍스트 칼로리 계산 */}
+                  <View style={styles.aiSection}>
+                    <Text style={styles.aiSectionTitle}>🤖 AI로 추가</Text>
+                    <Text style={styles.aiSectionHint}>음식명을 입력하면 AI가 칼로리를 자동으로 계산해드립니다</Text>
+                    <View style={styles.aiInputRow}>
+                      <TextInput
+                        style={[styles.foodNameInput, { flex: 2 }]}
+                        value={aiText}
+                        onChangeText={setAiText}
+                        placeholder="음식명 (예: 된장찌개)"
+                        placeholderTextColor="#B0BEC5"
+                      />
+                      <TextInput
+                        style={[styles.foodAmountInput, { flex: 1 }]}
+                        value={aiAmount}
+                        onChangeText={setAiAmount}
+                        placeholder="양 (선택)"
+                        placeholderTextColor="#B0BEC5"
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.aiCalcBtn, aiLoading && { opacity: 0.6 }]}
+                      onPress={handleAiAdd}
+                      disabled={aiLoading}
+                    >
+                      {aiLoading
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Text style={styles.aiCalcBtnText}>🤖 AI 계산 후 추가</Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
 
                   {/* 총 칼로리 */}
                   <View style={styles.totalRow}>
@@ -470,7 +598,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
   },
-  resultCardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 14 },
+  resultCardTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
 
   mealTypeRow:         { flexDirection: 'row', gap: 8, marginBottom: 16 },
   mealTypeBtn:         { flex: 1, paddingVertical: 7, borderRadius: 10, borderWidth: 1.5, borderColor: '#E0E7EF', alignItems: 'center' },
@@ -499,4 +627,45 @@ const styles = StyleSheet.create({
 
   saveBtn:     { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  uncertainBadge: {
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  uncertainBadgeText: { fontSize: 11, color: '#856404', fontWeight: '600' },
+
+  resultCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  editToggleBtn: { backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  editToggleText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  editActionBar: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  editActionBtn: { flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+  editActionText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  foodItemSelected: { backgroundColor: COLORS.primary + '15' },
+  scanCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D0D8E4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  scanCheckboxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  scanCheckmark: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  aiSection: {
+    backgroundColor: '#F0F7FF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#DCEEFF',
+  },
+  aiSectionTitle: { fontSize: 13, fontWeight: '700', color: '#2C6FAC', marginBottom: 4 },
+  aiSectionHint: { fontSize: 11, color: '#5A8FCC', marginBottom: 10 },
+  aiInputRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  aiCalcBtn: {
+    backgroundColor: '#4A90D9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  aiCalcBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

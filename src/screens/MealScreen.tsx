@@ -11,15 +11,21 @@ import {
   Modal,
   RefreshControl,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMealsByDate, saveMeal, deleteMeal, deleteAllTodayMeals } from '../api/api';
+import { calculateCaloriesFromText } from '../services/claudeService';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
+import { useCarryOver } from '../hooks/useCarryOver';
+import { useWarningNotifications } from '../hooks/useWarningNotifications';
 import { COLORS } from '../theme';
 import { localDateStr, todayStr, dateLabel } from '../utils/dateUtils';
 import CalendarPicker from '../components/CalendarPicker';
+import CarryOverCard from '../components/CarryOverCard';
+import MealGoalModal from '../components/MealGoalModal';
 
 const MEAL_TYPES = ['아침', '점심', '저녁', '간식'];
 const MEAL_EMOJI: Record<string, string> = {
@@ -49,10 +55,13 @@ interface Meal {
 export default function MealScreen() {
   const { goalKcal } = useAuth();
   const { isPremium } = useSubscription();
+  const { carryData, fetch: fetchCarryOver, effectiveBreakfastGoal, effectiveLunchGoal, effectiveDinnerGoal, updateMealGoals } = useCarryOver();
+  const { checkExceed } = useWarningNotifications();
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [viewDate, setViewDate] = useState(todayStr());
   const [memo, setMemo] = useState('');
@@ -68,6 +77,9 @@ export default function MealScreen() {
   const [foods, setFoods] = useState<{ foodName: string; kcal: string }[]>([
     { foodName: '', kcal: '' },
   ]);
+  const [aiText, setAiText] = useState('');
+  const [aiAmount, setAiAmount] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   const fetchMeals = useCallback(async (date: string) => {
     try {
@@ -106,11 +118,12 @@ export default function MealScreen() {
     }
   };
 
-  // 탭 포커스 시 오늘 날짜로 리셋
+  // 탭 포커스 시 오늘 날짜로 리셋 + carry-over fetch
   useFocusEffect(
     useCallback(() => {
       setViewDate(todayStr());
-    }, [])
+      fetchCarryOver();
+    }, [fetchCarryOver])
   );
 
   // viewDate 변경 시 (날짜 네비 or 포커스 리셋) 식사 목록 fetch
@@ -152,6 +165,8 @@ export default function MealScreen() {
     setMealType('아침');
     setLogDate(todayStr());
     setFoods([{ foodName: '', kcal: '' }]);
+    setAiText('');
+    setAiAmount('');
   };
 
   const handleSave = async () => {
@@ -185,9 +200,36 @@ export default function MealScreen() {
         Alert.alert('저장 완료', `${logDate} 날짜로 기록되었습니다.\n해당 날짜로 이동해서 확인하세요.`);
       }
     } catch (e: any) {
-      Alert.alert('저장 실패', e?.response?.data?.message || '다시 시도해주세요.');
+      console.error('[MealScreen] saveMeal error:', e?.response?.status, JSON.stringify(e?.response?.data), e?.message);
+      Alert.alert('저장 실패', e?.response?.data?.message || `오류: ${e?.message || '다시 시도해주세요.'}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAiCalc = async () => {
+    if (!aiText.trim()) {
+      Alert.alert('입력 오류', '음식명을 입력해주세요.');
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const query = aiAmount.trim() ? `${aiText.trim()} ${aiAmount.trim()}` : aiText.trim();
+      const result = await calculateCaloriesFromText(query);
+      const newFoods = result.foods.map(f => ({
+        foodName: f.name,
+        kcal: String(f.kcal),
+      }));
+      setFoods(prev => {
+        const nonEmpty = prev.filter(f => f.foodName.trim() || f.kcal.trim());
+        return [...nonEmpty, ...newFoods];
+      });
+      setAiText('');
+      setAiAmount('');
+    } catch {
+      Alert.alert('AI 계산 실패', '다시 시도해주세요.');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -269,7 +311,43 @@ export default function MealScreen() {
 
   const totalKcal = meals.reduce((s, m) => s + (Number(m.totalKcal) || 0), 0);
   const kcalPct = goalKcal > 0 ? totalKcal / goalKcal : 0;
+
+  // 경고3: 오늘 날짜 + 목표 초과 시 즉시 알림 (치팅데이 여부는 훅 내부에서 판단)
+  useEffect(() => {
+    if (viewDate === todayStr()) {
+      checkExceed(totalKcal, goalKcal);
+    }
+  }, [totalKcal, viewDate, goalKcal, checkExceed]);
   const kcalBarColor = kcalPct >= 0.9 ? COLORS.primary : kcalPct >= 0.6 ? COLORS.warning : COLORS.success;
+  const modalTotalKcal = foods.reduce((s, f) => s + (parseInt(f.kcal, 10) || 0), 0);
+
+  // 끼니별 섭취량 계산
+  const eatenByType = meals.reduce((acc, m) => {
+    acc[m.mealType] = (acc[m.mealType] || 0) + (Number(m.totalKcal) || 0);
+    return acc;
+  }, {} as Record<string, number>);
+
+  // CarryOverCard 데이터
+  const carryItems = [
+    {
+      label: '아침', emoji: '🌅',
+      goal: effectiveBreakfastGoal,
+      eaten: eatenByType['아침'] || 0,
+      carry: Math.max(0, effectiveBreakfastGoal - (eatenByType['아침'] || 0)),
+    },
+    {
+      label: '점심', emoji: '☀️',
+      goal: effectiveLunchGoal,
+      eaten: eatenByType['점심'] || 0,
+      carry: Math.max(0, effectiveLunchGoal - (eatenByType['점심'] || 0)),
+    },
+    {
+      label: '저녁', emoji: '🌙',
+      goal: effectiveDinnerGoal,
+      eaten: eatenByType['저녁'] || 0,
+      carry: 0,
+    },
+  ];
 
 
   return (
@@ -368,6 +446,14 @@ export default function MealScreen() {
           <Text style={styles.kcalBarText}>{totalKcal} / {goalKcal} kcal</Text>
         </View>
 
+        {/* 끼니별 칼로리 이월 카드 (오늘 날짜만 표시) */}
+        {viewDate === todayStr() && (
+          <CarryOverCard
+            items={carryItems}
+            onSettingsPress={() => setGoalModalVisible(true)}
+          />
+        )}
+
         {loading ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
         ) : meals.length === 0 ? (
@@ -449,102 +535,155 @@ export default function MealScreen() {
         </View>
       )}
 
+      {/* 끼니별 목표 설정 모달 */}
+      <MealGoalModal
+        visible={goalModalVisible}
+        breakfastGoal={carryData.breakfastGoal}
+        lunchGoal={carryData.lunchGoal}
+        dinnerGoal={carryData.dinnerGoal}
+        onSave={async (b, l, d) => { await updateMealGoals(b, l, d); }}
+        onClose={() => setGoalModalVisible(false)}
+      />
+
       {/* Add Meal Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>식사 추가</Text>
-              <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Date Selector */}
-            <Text style={styles.label}>날짜</Text>
-            {Platform.OS === 'web' ? (
-              <input
-                type="date"
-                value={logDate}
-                max={todayStr()}
-                onChange={(e: any) => setLogDate(e.target.value)}
-                style={{
-                  width: '100%', padding: '10px 14px', fontSize: 15,
-                  border: '1.5px solid #E0E7EF', borderRadius: 12,
-                  marginBottom: 12, color: '#2C3E50', backgroundColor: '#FAFBFD',
-                  boxSizing: 'border-box',
-                } as any}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.datePickerBtn}
-                onPress={() => setShowLogDateCalendar(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.datePickerBtnText}>📅 {logDate}</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Meal Type Selector */}
-            <Text style={styles.label}>식사 유형</Text>
-            <View style={styles.typeRow}>
-              {MEAL_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.typeBtn, mealType === type && styles.typeBtnActive]}
-                  onPress={() => setMealType(type)}
-                >
-                  <Text style={[styles.typeBtnText, mealType === type && styles.typeBtnTextActive]}>
-                    {MEAL_EMOJI[type]} {type}
-                  </Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>식사 추가</Text>
+                <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
+                  <Text style={styles.modalClose}>✕</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </View>
 
-            {/* Food Rows */}
-            <Text style={styles.label}>음식 목록</Text>
-            <ScrollView style={{ maxHeight: 220 }}>
-              {foods.map((food, idx) => (
-                <View key={idx} style={styles.foodInputRow}>
-                  <TextInput
-                    style={[styles.foodInput, { flex: 2 }]}
-                    placeholder="음식 이름"
-                    placeholderTextColor="#B0BEC5"
-                    value={food.foodName}
-                    onChangeText={(v) => updateFood(idx, 'foodName', v)}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Date Selector */}
+                <Text style={styles.label}>날짜</Text>
+                {Platform.OS === 'web' ? (
+                  <input
+                    type="date"
+                    value={logDate}
+                    max={todayStr()}
+                    onChange={(e: any) => setLogDate(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px 14px', fontSize: 15,
+                      border: '1.5px solid #E0E7EF', borderRadius: 12,
+                      marginBottom: 12, color: '#2C3E50', backgroundColor: '#FAFBFD',
+                      boxSizing: 'border-box',
+                    } as any}
                   />
-                  <TextInput
-                    style={[styles.foodInput, { flex: 1, marginLeft: 8 }]}
-                    placeholder="kcal"
-                    placeholderTextColor="#B0BEC5"
-                    keyboardType="numeric"
-                    value={food.kcal}
-                    onChangeText={(v) => updateFood(idx, 'kcal', v)}
-                  />
-                  <TouchableOpacity onPress={() => removeFoodRow(idx)} style={styles.removeBtn}>
-                    <Text style={{ color: COLORS.primary, fontSize: 18 }}>−</Text>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.datePickerBtn}
+                    onPress={() => setShowLogDateCalendar(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.datePickerBtnText}>📅 {logDate}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Meal Type Selector */}
+                <Text style={styles.label}>식사 유형</Text>
+                <View style={styles.typeRow}>
+                  {MEAL_TYPES.map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.typeBtn, mealType === type && styles.typeBtnActive]}
+                      onPress={() => setMealType(type)}
+                    >
+                      <Text style={[styles.typeBtnText, mealType === type && styles.typeBtnTextActive]}>
+                        {MEAL_EMOJI[type]} {type}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* AI 칼로리 자동 계산 섹션 */}
+                <View style={styles.aiSection}>
+                  <Text style={styles.label}>🤖 AI 칼로리 자동 계산</Text>
+                  <Text style={styles.aiHint}>AI가 칼로리를 자동으로 계산해드립니다</Text>
+                  <View style={styles.aiInputRow}>
+                    <TextInput
+                      style={[styles.foodInput, { flex: 2 }]}
+                      placeholder="음식명 (예: 비빔밥)"
+                      placeholderTextColor="#B0BEC5"
+                      value={aiText}
+                      onChangeText={setAiText}
+                    />
+                    <TextInput
+                      style={[styles.foodInput, { flex: 1, marginLeft: 8 }]}
+                      placeholder="양 (선택)"
+                      placeholderTextColor="#B0BEC5"
+                      value={aiAmount}
+                      onChangeText={setAiAmount}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.aiBtn, aiLoading && { opacity: 0.6 }]}
+                    onPress={handleAiCalc}
+                    disabled={aiLoading}
+                  >
+                    {aiLoading
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.aiBtnText}>🤖 AI 계산 후 자동 추가</Text>
+                    }
                   </TouchableOpacity>
                 </View>
-              ))}
-            </ScrollView>
 
-            <TouchableOpacity style={styles.addFoodBtn} onPress={addFoodRow}>
-              <Text style={styles.addFoodBtnText}>+ 음식 추가</Text>
-            </TouchableOpacity>
+                {/* Food Rows */}
+                <Text style={styles.label}>음식 목록</Text>
+                {foods.map((food, idx) => (
+                  <View key={idx} style={styles.foodInputRow}>
+                    <TextInput
+                      style={[styles.foodInput, { flex: 2 }]}
+                      placeholder="음식 이름"
+                      placeholderTextColor="#B0BEC5"
+                      value={food.foodName}
+                      onChangeText={(v) => updateFood(idx, 'foodName', v)}
+                    />
+                    <TextInput
+                      style={[styles.foodInput, { flex: 1, marginLeft: 8 }]}
+                      placeholder="kcal"
+                      placeholderTextColor="#B0BEC5"
+                      keyboardType="numeric"
+                      value={food.kcal}
+                      onChangeText={(v) => updateFood(idx, 'kcal', v)}
+                    />
+                    <TouchableOpacity onPress={() => removeFoodRow(idx)} style={styles.removeBtn}>
+                      <Text style={{ color: COLORS.primary, fontSize: 18 }}>−</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
 
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.saveBtnText}>저장</Text>
-              )}
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.addFoodBtn} onPress={addFoodRow}>
+                  <Text style={styles.addFoodBtnText}>+ 음식 추가</Text>
+                </TouchableOpacity>
+
+                {/* 실시간 합계 */}
+                <View style={styles.modalTotalRow}>
+                  <Text style={styles.modalTotalLabel}>합계</Text>
+                  <Text style={styles.modalTotalKcal}>{modalTotalKcal} kcal</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>저장</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 날짜 달력 (헤더) */}
@@ -723,4 +862,32 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  aiSection: {
+    backgroundColor: '#F0F7FF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#DCEEFF',
+  },
+  aiHint: { fontSize: 11, color: '#5A8FCC', marginBottom: 10, marginTop: -4 },
+  aiInputRow: { flexDirection: 'row', marginBottom: 10 },
+  aiBtn: {
+    backgroundColor: '#4A90D9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  aiBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  modalTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F8',
+    marginBottom: 12,
+  },
+  modalTotalLabel: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  modalTotalKcal: { fontSize: 20, fontWeight: '800', color: COLORS.primary },
 });

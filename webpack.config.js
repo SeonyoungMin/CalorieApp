@@ -15,7 +15,7 @@ module.exports = {
     open: true,
     proxy: [
       {
-        context: ['/api', '/login', '/register', '/logout'],
+        context: ['/api', '/login', '/register', '/logout', '/auth'],
         target: 'http://54.252.162.73:8081',
         changeOrigin: true,
         autoRewrite: true,
@@ -38,6 +38,8 @@ module.exports = {
       'react-native-svg': 'react-native-svg/src/ReactNativeSVG.web',
       'react-native-image-picker': path.resolve(__dirname, 'src/mocks/react-native-image-picker.js'),
       '@notifee/react-native': path.resolve(__dirname, 'src/mocks/notifee.js'),
+      '@react-native-seoul/kakao-login': path.resolve(__dirname, 'src/mocks/kakao-login.web.js'),
+      '@react-native-google-signin/google-signin': path.resolve(__dirname, 'src/mocks/google-signin.web.js'),
     },
   },
   module: {

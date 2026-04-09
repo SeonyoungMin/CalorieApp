@@ -35,6 +35,11 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [premiumVisible, setPremiumVisible] = useState(false);
   const [editableFoods, setEditableFoods] = useState<EditableFood[]>([]);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+  const [aiAddText, setAiAddText] = useState('');
+  const [aiAddAmount, setAiAddAmount] = useState('');
+  const [aiAddLoading, setAiAddLoading] = useState(false);
   const { canScan, remainingFreeScans, isPremium, incrementScanCount, purchasePremium, cancelPremium } = useSubscription();
 
   // 모달이 열릴 때마다 오늘 날짜로 리셋 (앱이 오래 떠있어도 날짜 오류 방지)
@@ -55,6 +60,47 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
     setEditableFoods([]);
     setLoading(false);
     setLogDate(todayStr());
+    setEditMode(false);
+    setSelectedIndices([]);
+    setAiAddText('');
+    setAiAddAmount('');
+  };
+
+  const handleAiAdd = async () => {
+    if (!aiAddText.trim()) return;
+    setAiAddLoading(true);
+    try {
+      const query = aiAddAmount.trim() ? `${aiAddText.trim()} ${aiAddAmount.trim()}` : aiAddText.trim();
+      const res = await calculateCaloriesFromText(query);
+      setEditableFoods(prev => [
+        ...prev,
+        ...res.foods.map(f => ({ name: f.name, amount: f.amount || '', kcal: String(f.kcal) })),
+      ]);
+      setAiAddText('');
+      setAiAddAmount('');
+    } catch {
+      Alert.alert('AI 계산 실패', '다시 시도해주세요.');
+    } finally {
+      setAiAddLoading(false);
+    }
+  };
+
+  const toggleSelect = (idx: number) => {
+    setSelectedIndices(prev =>
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
+  const deleteSelected = () => {
+    setEditableFoods(prev => prev.filter((_, i) => !selectedIndices.includes(i)));
+    setSelectedIndices([]);
+    setEditMode(false);
+  };
+
+  const deleteAll = () => {
+    setEditableFoods([]);
+    setSelectedIndices([]);
+    setEditMode(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -108,7 +154,9 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
       return;
     }
     const picker = useCamera ? launchCamera : launchImageLibrary;
-    picker({ mediaType: 'photo', includeBase64: true, quality: 0.4, maxWidth: 1280, maxHeight: 1280 }, async (res) => {
+    const quality = useCamera ? 0.2 : 0.4;
+    const maxSize = useCamera ? 800 : 1280;
+    picker({ mediaType: 'photo', includeBase64: true, quality, maxWidth: maxSize, maxHeight: maxSize }, async (res) => {
       if (res.didCancel || !res.assets?.[0]?.base64) return;
       setLoading(true);
       setMode('result');
@@ -261,39 +309,112 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
                 </View>
               ) : (
                 <>
-                  {/* 총 칼로리 */}
+                  {/* 총 칼로리 + 편집 버튼 */}
                   <View style={styles.resultHeader}>
-                    <Text style={styles.totalKcal}>{totalKcal} kcal</Text>
-                    <Text style={styles.summary}>아래 내용을 수정할 수 있어요</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.totalKcal}>{totalKcal} kcal</Text>
+                      <Text style={styles.summary}>아래 내용을 수정할 수 있어요</Text>
+                    </View>
+                    {!editMode ? (
+                      <TouchableOpacity style={styles.editToggleBtn} onPress={() => setEditMode(true)}>
+                        <Text style={styles.editToggleText}>편집</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity style={styles.editToggleBtn} onPress={() => { setEditMode(false); setSelectedIndices([]); }}>
+                        <Text style={styles.editToggleText}>완료</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
+
+                  {/* 편집 모드 액션바 */}
+                  {editMode && (
+                    <View style={styles.editActionBar}>
+                      <TouchableOpacity
+                        style={[styles.editActionBtn, { backgroundColor: COLORS.warning }, !selectedIndices.length && { opacity: 0.4 }]}
+                        onPress={deleteSelected}
+                        disabled={!selectedIndices.length}
+                      >
+                        <Text style={styles.editActionText}>선택 삭제 {selectedIndices.length > 0 ? `(${selectedIndices.length})` : ''}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.editActionBtn, { backgroundColor: COLORS.primary }]} onPress={deleteAll}>
+                        <Text style={styles.editActionText}>전체 삭제</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
                   {/* 음식 항목 (편집 가능) */}
                   {editableFoods.map((food, i) => (
-                    <View key={i} style={styles.editRow}>
-                      <TextInput
-                        style={[styles.editInput, { flex: 2 }]}
-                        value={food.name}
-                        onChangeText={v => updateFood(i, 'name', v)}
-                        placeholder="음식명"
-                        placeholderTextColor="#B0BEC5"
-                      />
-                      <TextInput
-                        style={[styles.editInput, { flex: 1 }]}
-                        value={food.kcal}
-                        onChangeText={v => updateFood(i, 'kcal', v.replace(/[^0-9]/g, ''))}
-                        placeholder="kcal"
-                        placeholderTextColor="#B0BEC5"
-                        keyboardType="numeric"
-                      />
-                      <TouchableOpacity onPress={() => removeFood(i)} style={styles.removeBtn}>
-                        <Text style={styles.removeBtnText}>✕</Text>
+                    editMode ? (
+                      <TouchableOpacity key={i} style={[styles.editRow, selectedIndices.includes(i) && styles.editRowSelected]} onPress={() => toggleSelect(i)} activeOpacity={0.7}>
+                        <View style={[styles.checkbox, selectedIndices.includes(i) && styles.checkboxOn]}>
+                          {selectedIndices.includes(i) && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={[styles.editInput, { flex: 2, paddingVertical: 8 }]} numberOfLines={1}>{food.name || '(음식명 없음)'}</Text>
+                        <Text style={[styles.editInput, { flex: 1, textAlign: 'right', paddingVertical: 8 }]}>{food.kcal || '0'} kcal</Text>
                       </TouchableOpacity>
-                    </View>
+                    ) : (
+                      <View key={i} style={styles.editRow}>
+                        <TextInput
+                          style={[styles.editInput, { flex: 2 }]}
+                          value={food.name}
+                          onChangeText={v => updateFood(i, 'name', v)}
+                          placeholder="음식명"
+                          placeholderTextColor="#B0BEC5"
+                        />
+                        <TextInput
+                          style={[styles.editInput, { flex: 1 }]}
+                          value={food.kcal}
+                          onChangeText={v => updateFood(i, 'kcal', v.replace(/[^0-9]/g, ''))}
+                          placeholder="kcal"
+                          placeholderTextColor="#B0BEC5"
+                          keyboardType="numeric"
+                        />
+                        <TouchableOpacity onPress={() => removeFood(i)} style={styles.removeBtn}>
+                          <Text style={styles.removeBtnText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )
                   ))}
 
-                  <TouchableOpacity style={styles.addFoodBtn} onPress={addFood}>
-                    <Text style={styles.addFoodText}>+ 음식 추가</Text>
-                  </TouchableOpacity>
+                  {!editMode && (
+                    <>
+                      <TouchableOpacity style={styles.addFoodBtn} onPress={addFood}>
+                        <Text style={styles.addFoodText}>+ 수동 추가</Text>
+                      </TouchableOpacity>
+
+                      {/* AI로 추가 */}
+                      <View style={styles.aiAddSection}>
+                        <Text style={styles.aiAddTitle}>🤖 AI로 추가</Text>
+                        <Text style={styles.aiAddHint}>음식명을 입력하면 AI가 칼로리를 자동으로 계산해드립니다</Text>
+                        <View style={styles.aiAddRow}>
+                          <TextInput
+                            style={[styles.editInput, { flex: 2 }]}
+                            value={aiAddText}
+                            onChangeText={setAiAddText}
+                            placeholder="음식명 (예: 된장찌개)"
+                            placeholderTextColor="#B0BEC5"
+                          />
+                          <TextInput
+                            style={[styles.editInput, { flex: 1 }]}
+                            value={aiAddAmount}
+                            onChangeText={setAiAddAmount}
+                            placeholder="양 (선택)"
+                            placeholderTextColor="#B0BEC5"
+                          />
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.aiAddBtn, aiAddLoading && { opacity: 0.6 }]}
+                          onPress={handleAiAdd}
+                          disabled={aiAddLoading}
+                        >
+                          {aiAddLoading
+                            ? <ActivityIndicator color="#fff" size="small" />
+                            : <Text style={styles.aiAddBtnText}>🤖 AI 계산 후 추가</Text>
+                          }
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
 
                   {/* 식사 구분 */}
                   <Text style={styles.mealLabel}>식사 구분</Text>
@@ -406,6 +527,21 @@ const styles = StyleSheet.create({
   mealTypeTextActive: { color: '#fff' },
   datePickerBtn: { borderWidth: 1.5, borderColor: '#E0E7EF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16, backgroundColor: '#FAFBFD' },
   datePickerBtnText: { fontSize: 14, color: COLORS.text, fontWeight: '600' },
+  editToggleBtn: { backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginLeft: 12 },
+  editToggleText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  editActionBar: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  editActionBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  editActionText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  editRowSelected: { backgroundColor: COLORS.primary + '15', borderRadius: 10 },
+  checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D0D8E4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  checkboxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkmark: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  aiAddSection: { backgroundColor: '#F0F7FF', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#DCEEFF' },
+  aiAddTitle: { fontSize: 13, fontWeight: '700', color: '#2C6FAC', marginBottom: 4 },
+  aiAddHint: { fontSize: 11, color: '#5A8FCC', marginBottom: 10 },
+  aiAddRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  aiAddBtn: { backgroundColor: '#4A90D9', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  aiAddBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   scanCountBadge: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#FFB74D' },
   scanCountText: { fontSize: 13, fontWeight: '600', color: '#E65100' },
   scanCountUpgrade: { fontSize: 12, fontWeight: '700', color: '#FF6B6B' },

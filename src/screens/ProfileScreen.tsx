@@ -105,8 +105,8 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={styles.avatarEmoji}>👤</Text>
           </View>
           <Text style={styles.username}>{nickname || '내 프로필'}</Text>
-          <Text style={styles.usernameSubt}>목표 {contextGoal} kcal · 건강 목표를 설정하고 관리하세요</Text>
-          {userWeightKg && userHeightCm && (() => {
+          <Text style={styles.usernameSubt}>목표 {contextGoal || '-'} kcal · 건강 목표를 설정하고 관리하세요</Text>
+          {userWeightKg && userHeightCm && userHeightCm > 0 && (() => {
             const bmiVal = userWeightKg / Math.pow(userHeightCm / 100, 2);
             const { label, color } = getBmiInfo(bmiVal);
             return (

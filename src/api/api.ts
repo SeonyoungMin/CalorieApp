@@ -28,7 +28,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: JSESSIONID 캡처 (네이티브 전용)
+// Response interceptor: JSESSIONID 캡처 + 401 자동 재로그인 (네이티브 전용)
 api.interceptors.response.use(
   async (response) => {
     if (!isWeb) {
@@ -48,7 +48,48 @@ api.interceptors.response.use(
     }
     return response;
   },
-  (error) => Promise.reject(error)
+  async (error) => {
+    // 401 세션 만료 시 저장된 자격증명으로 자동 재로그인 후 원래 요청 재시도
+    // 소셜 유저(AUTO_EMAIL 없음)는 재로그인 불가 → 그대로 에러 반환
+    if (!isWeb && error?.response?.status === 401 && !error.config?._retry) {
+      try {
+        const socialType = await AsyncStorage.getItem('@social_type');
+        if (socialType) return Promise.reject(error); // 소셜 유저 → 바로 반환
+
+        const autoEmail = await AsyncStorage.getItem('AUTO_EMAIL');
+        const autoPwd = await AsyncStorage.getItem('AUTO_PWD');
+        if (autoEmail && autoPwd) {
+          const params = new URLSearchParams();
+          params.append('email', autoEmail);
+          params.append('password', autoPwd);
+          const loginRes = await api.post('/login', params.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            maxRedirects: 0,
+            validateStatus: (s) => s >= 200 && s < 400,
+            _retry: true,
+          } as any);
+          // 새 JSESSIONID 캡처
+          const setCookie = loginRes.headers?.['set-cookie'];
+          if (setCookie) {
+            const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+            const match = cookieStr.match(/JSESSIONID=([^;]+)/);
+            if (match) await AsyncStorage.setItem('JSESSIONID', match[1]);
+          }
+          const responseURL: string = (loginRes.request as any)?.responseURL || '';
+          if (responseURL) {
+            const urlMatch = responseURL.match(/jsessionid=([^;?/\s]+)/i);
+            if (urlMatch) await AsyncStorage.setItem('JSESSIONID', urlMatch[1]);
+          }
+          // 원래 요청 재시도
+          const newSessionId = await AsyncStorage.getItem('JSESSIONID');
+          error.config._retry = true;
+          error.config.headers['Cookie'] = `JSESSIONID=${newSessionId}`;
+          return api(error.config);
+        }
+      } catch (_) {}
+    }
+    return Promise.reject(error);
+  }
 );
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -121,5 +162,47 @@ export const getUserProfile = () => api.get('/api/user/me');
 export const setGoalKcal = (goalKcal: number) => api.post('/api/user/goal', { goalKcal });
 export const setUserProfile = (weightKg: number, heightCm: number) => api.post('/api/user/profile', { weightKg, heightCm });
 export const getWeeklyStats = () => api.get('/api/user/stats/weekly');
+
+// ─── Weight Goal ─────────────────────────────────────────────────────────────
+export const getWeightGoal = () => api.get('/api/user/weight/goal');
+export const updateUserWeight = (data: {
+  currentWeight?: number;
+  goalWeight?: number;
+}) => api.put('/api/user/weight', data);
+export const getWeightGoalHistory = () => api.get('/api/user/weight/history');
+export const getCalorieAverage = () => api.get('/api/calorie/average');
+
+// ─── Carry Over ───────────────────────────────────────────────────────────────
+export const getTodayCarryOver = () => api.get('/api/calorie/carry-over/today');
+export const saveCarryOver = (data: {
+  carryDate: string;
+  breakfastCarry: number;
+  lunchCarry: number;
+}) => api.post('/api/calorie/carry-over', data);
+export const saveMealGoals = (data: {
+  breakfastGoal: number;
+  lunchGoal: number;
+  dinnerGoal: number;
+}) => api.post('/api/calorie/meal-goals', data);
+
+// ─── Drink ────────────────────────────────────────────────────────────────────
+export const saveDrinkSchedule = (data: {
+  scheduledDate: string;
+  memo?: string;
+}) => api.post('/api/drink/schedule', data);
+
+export const getUpcomingDrinkSchedules = () => api.get('/api/drink/schedule/upcoming');
+
+// ─── Cheat Day ────────────────────────────────────────────────────────────────
+export const checkStreak     = () => api.post('/api/cheat/check-streak');
+export const useCoin         = () => api.post('/api/cheat/use-coin');
+export const getCheatStatus  = () => api.get('/api/cheat/status');
+export const getCheatHistory = () => api.get('/api/cheat/history');
+
+// ─── Social Auth ──────────────────────────────────────────────────────────────
+export const kakaoLogin  = (kakaoToken: string) =>
+  api.post('/auth/kakao', { kakaoToken });
+export const googleLogin = (googleToken: string) =>
+  api.post('/auth/google', { googleToken });
 
 export default api;
