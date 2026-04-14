@@ -1,7 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-
-// API 키는 환경변수 또는 직접 입력
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'your-api-key-here';
+import { ANTHROPIC_API_KEY } from '@env';
 
 const client = new Anthropic({
   apiKey: ANTHROPIC_API_KEY,

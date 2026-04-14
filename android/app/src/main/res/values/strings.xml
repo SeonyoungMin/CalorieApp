@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">CalorieApp</string>
     <!-- 카카오 개발자 센터 → 내 애플리케이션 → 앱 키 → 네이티브 앱 키 -->
-    <string name="kakao_app_key">e1dc9e0d4ccf5ced6f542a80493aeab6</string>
+    <string name="kakao_app_key">7dc1995cc077f7283471310cac32fce4</string>
 </resources>

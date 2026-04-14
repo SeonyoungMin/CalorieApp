@@ -130,14 +130,18 @@ export default function ScanScreen() {
       input.accept = 'image/*';
       if (useCamera) input.capture = 'environment';
       input.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      const removeInput = () => {
+        if (document.body.contains(input)) document.body.removeChild(input);
+      };
       document.body.appendChild(input);
       input.onchange = async (e: any) => {
         const file = e.target.files?.[0];
-        document.body.removeChild(input);
+        removeInput();
         if (!file) return;
         const base64 = await fileToBase64(file);
         runScan(base64, file.type, type);
       };
+      input.addEventListener('cancel', removeInput);
       input.click();
       return;
     }

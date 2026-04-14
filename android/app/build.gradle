@@ -83,8 +83,8 @@ android {
         applicationId "com.calorieapp.kals"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
-        versionName "1.0.6"
+        versionCode 11
+        versionName "1.1.0"
         manifestPlaceholders = [kakao_app_key: "e1dc9e0d4ccf5ced6f542a80493aeab6"]
     }
     lint {

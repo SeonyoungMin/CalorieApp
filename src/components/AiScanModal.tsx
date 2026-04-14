@@ -131,10 +131,13 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
       input.style.position = 'fixed';
       input.style.opacity = '0';
       input.style.pointerEvents = 'none';
+      const removeInput = () => {
+        if (document.body.contains(input)) document.body.removeChild(input);
+      };
       document.body.appendChild(input);
       input.onchange = async (e: any) => {
-        const file = e.target.files[0];
-        document.body.removeChild(input);
+        const file = e.target.files?.[0];
+        removeInput();
         if (!file) return;
         setLoading(true);
         setMode('result');
@@ -150,6 +153,7 @@ export default function AiScanModal({ visible, onClose, onSaved }: Props) {
           setLoading(false);
         }
       };
+      input.addEventListener('cancel', removeInput);
       input.click();
       return;
     }

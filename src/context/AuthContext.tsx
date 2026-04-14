@@ -51,32 +51,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const checkSession = async () => {
+      if (isWeb) {
+        // 웹 데모 모드: 로그인 없이 UI 바로 표시
+        setGoalKcal(2000);
+        setNickname('데모');
+        setIsLoggedIn(true);
+        setIsLoading(false);
+        return;
+      }
       try {
-        if (isWeb) {
-          // 웹: 브라우저 쿠키로 세션 유효성 확인
-          const res = await getUserProfile();
-          if (res.status === 200 && res.data) {
-            setGoalKcal(res.data.goalKcal || 2000);
-            setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
-            setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
-            setNickname(res.data.nickname || '');
+        // 네이티브: AsyncStorage JSESSIONID 확인
+        const sessionId = await AsyncStorage.getItem('JSESSIONID');
+        if (sessionId) {
+          try {
+            await fetchProfile();
             setIsLoggedIn(true);
             setIsLoading(false);
             return;
-          }
-        } else {
-          // 네이티브: AsyncStorage JSESSIONID 확인
-          const sessionId = await AsyncStorage.getItem('JSESSIONID');
-          if (sessionId) {
-            try {
-              await fetchProfile();
-              setIsLoggedIn(true);
-              setIsLoading(false);
-              return;
-            } catch (_) {
-              // 세션 만료 → 자동로그인 시도
-              await AsyncStorage.removeItem('JSESSIONID');
-            }
+          } catch (_) {
+            // 세션 만료 → 자동로그인 시도
+            await AsyncStorage.removeItem('JSESSIONID');
           }
         }
       } catch (_) {}
@@ -140,6 +134,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loginWithKakao = async () => {
     await signInWithKakao();                 // SDK → 백엔드 → JSESSIONID 저장
     const res = await getUserProfile();
+    if (!res.data) throw new Error('프로필 정보를 가져오지 못했습니다.');
     setGoalKcal(res.data.goalKcal || 2000);
     setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
     setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
@@ -151,6 +146,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loginWithGoogle = async () => {
     await signInWithGoogle();
     const res = await getUserProfile();
+    if (!res.data) throw new Error('프로필 정보를 가져오지 못했습니다.');
     setGoalKcal(res.data.goalKcal || 2000);
     setUserWeightKg(res.data.weightKg ? parseFloat(res.data.weightKg) : null);
     setUserHeightCm(res.data.heightCm ? parseFloat(res.data.heightCm) : null);
