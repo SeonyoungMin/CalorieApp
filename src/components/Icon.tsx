@@ -1,0 +1,116 @@
+import React from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import {
+  faGear,
+  faHouse,
+  faUtensils,
+  faDumbbell,
+  faEllipsis,
+  faCamera,
+  faChevronRight,
+  faChevronLeft,
+  faPlus,
+  faXmark,
+  faBell,
+  faHeart,
+  faUser,
+  faUsers,
+  faDroplet,
+  faChartLine,
+  faChartColumn,
+  faCalendarDays,
+  faImage,
+  faTrash,
+  faPen,
+  faCheck,
+  faMagnifyingGlass,
+  faShareNodes,
+  faRightFromBracket,
+  faMoon,
+  faSun,
+  faStar,
+  faCrown,
+  faWineGlass,
+  faPills,
+  faWeightScale,
+  faCirclePlus,
+  faFire,
+  faBookmark,
+  faLock,
+  faCloud,
+  faCalculator,
+  faSliders,
+  faClock,
+  faBowlFood,
+  faCalendarCheck,
+  faWandMagicSparkles,
+  faSnowflake,
+  faCarrot,
+  faAppleWhole,
+  faPepperHot,
+} from '@fortawesome/free-solid-svg-icons';
+import { COLORS } from '../theme';
+
+const ICONS = {
+  gear: faGear,
+  home: faHouse,
+  meal: faUtensils,
+  workout: faDumbbell,
+  more: faEllipsis,
+  camera: faCamera,
+  chevronRight: faChevronRight,
+  chevronLeft: faChevronLeft,
+  plus: faPlus,
+  close: faXmark,
+  bell: faBell,
+  heart: faHeart,
+  user: faUser,
+  users: faUsers,
+  water: faDroplet,
+  chart: faChartLine,
+  stats: faChartColumn,
+  calendar: faCalendarDays,
+  image: faImage,
+  trash: faTrash,
+  pen: faPen,
+  check: faCheck,
+  search: faMagnifyingGlass,
+  share: faShareNodes,
+  logout: faRightFromBracket,
+  moon: faMoon,
+  sun: faSun,
+  star: faStar,
+  crown: faCrown,
+  drink: faWineGlass,
+  pill: faPills,
+  weight: faWeightScale,
+  add: faCirclePlus,
+  fire: faFire,
+  bookmark: faBookmark,
+  lock: faLock,
+  cloud: faCloud,
+  calc: faCalculator,
+  sliders: faSliders,
+  clock: faClock,
+  food: faBowlFood,
+  calendarCheck: faCalendarCheck,
+  // faSparkles는 FontAwesome Pro 전용 → Free의 faWandMagicSparkles로 대체 (마법봉+반짝이, 의미 비슷)
+  sparkles: faWandMagicSparkles,
+  // 냉장고 비우기 기능 — refrigerator는 Pro 전용, snowflake(차가운 보관)로 대체
+  fridge: faSnowflake,
+  carrot: faCarrot,
+  apple: faAppleWhole,
+  pepper: faPepperHot,
+} as const;
+
+export type IconName = keyof typeof ICONS;
+
+type Props = {
+  name: IconName;
+  size?: number;
+  color?: string;
+};
+
+export default function Icon({ name, size = 18, color = COLORS.text }: Props) {
+  return <FontAwesomeIcon icon={ICONS[name]} size={size} color={color} />;
+}
